@@ -35,23 +35,124 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
 * **Don’t:** Add fragments directly to the back stack without user flow.
 * **Don’t:** Retain references to destroyed views (use `onDestroyView` cleanup or view binding properly).
 
-**Services:** Components for background work without UI. A `Service` runs on the main thread by default (use a separate thread within it if needed). Android provides started services (`startService`/`stopService`) and bound services (`bindService`). For example:
+**Services:** Components for background work without a UI. Services enable your app to keep running tasks even when the user is not interacting with the app. There are several types of services in Android:
 
+- **Started Service:** Launched via `startService()` or `ContextCompat.startForegroundService()`. Runs until stopped with `stopSelf()` or `stopService()`. Used for tasks that should continue even if the user leaves the app (e.g., music playback, file downloads).
+- **Bound Service:** Allows components (activities, fragments, other apps) to bind via `bindService()` and interact with the service through an `IBinder` interface. The service runs as long as at least one client is bound.
+- **Foreground Service:** A started service that must display a persistent notification. Used for tasks that the user is actively aware of (e.g., fitness tracking, navigation, ongoing calls). Required for background tasks on Android 8.0+.
+- **IntentService (deprecated):** A convenience subclass of Service that handles asynchronous requests on a worker thread. Use a regular Service with coroutines or WorkManager instead.
+
+**Service Lifecycle:**
+- `onCreate()`: Called once when the service is first created.
+- `onStartCommand(intent, flags, startId)`: Called each time the service is started. Return value determines restart behavior if killed (`START_STICKY`, `START_NOT_STICKY`, `START_REDELIVER_INTENT`).
+- `onBind(intent)`: Called when a client binds to the service. Return an `IBinder` for communication.
+- `onUnbind(intent)`: Called when all clients have unbound.
+- `onRebind(intent)`: Called when new clients bind after `onUnbind`.
+- `onDestroy()`: Called when the service is destroyed.
+
+**Example: Started Service with Foreground Notification**
 ```kotlin
-class MyService : Service() {
-    override fun onBind(intent: Intent?): IBinder? {
-        return null  // Return binder for bound service, or null for started service
+class MyForegroundService : Service() {
+    override fun onCreate() {
+        super.onCreate()
+        // Initialization logic
     }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Perform background work, e.g. start a coroutine or thread
+        // Start foreground notification
+        val notification = NotificationCompat.Builder(this, "channel_id")
+            .setContentTitle("Service Running")
+            .setSmallIcon(R.drawable.ic_service)
+            .build()
+        startForeground(1, notification)
+
+        // Start background work (use coroutine or thread)
+        CoroutineScope(Dispatchers.IO).launch {
+            doBackgroundWork()
+            stopSelf()
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Cleanup resources
     }
 }
 ```
 
-* **Do:** Call `stopSelf()` or `stopService()` when done.
-* **Don’t:** Run heavy work on the main thread; use `CoroutineScope` or `Thread`.
-* **Don’t:** Forget to declare services in `AndroidManifest.xml`.
+**Example: Bound Service**
+```kotlin
+class MyBoundService : Service() {
+    private val binder = LocalBinder()
+    inner class LocalBinder : Binder() {
+        fun getService(): MyBoundService = this@MyBoundService
+    }
+    override fun onBind(intent: Intent?): IBinder = binder
+
+    fun performAction() {
+        // Expose methods to clients
+    }
+}
+```
+In the client:
+```kotlin
+val connection = object : ServiceConnection {
+    override fun onServiceConnected(name: ComponentName, service: IBinder) {
+        val myService = (service as MyBoundService.LocalBinder).getService()
+        myService.performAction()
+    }
+    override fun onServiceDisconnected(name: ComponentName) {}
+}
+bindService(Intent(this, MyBoundService::class.java), connection, Context.BIND_AUTO_CREATE)
+```
+
+**Foreground Service Requirements (Android 8.0+):**
+- Must call `startForeground()` with a notification within 5 seconds of starting.
+- Declare `android:foregroundServiceType` in the manifest for specific use cases (e.g., `location`, `mediaPlayback`, `dataSync`).
+
+**Best Practices:**
+* **Do:** Always offload heavy work from the main thread using coroutines, threads, or executors.
+* **Do:** Use `WorkManager` for deferrable, guaranteed background work (especially for jobs that must survive process death or device reboot).
+* **Do:** Use foreground services for user-visible, long-running tasks.
+* **Do:** Handle service restarts and process death gracefully (persist state if needed).
+* **Do:** Declare all services in `AndroidManifest.xml` with `<service>` tags.
+* **Do:** Request runtime permissions if your service needs them (e.g., location, foreground service).
+* **Do:** Stop the service with `stopSelf()` or `stopService()` when work is complete to avoid wasting resources.
+
+* **Don’t:** Run long or blocking operations on the main thread (will cause ANR).
+* **Don’t:** Forget to release resources in `onDestroy()`.
+* **Don’t:** Use services for tasks that can be handled by `JobIntentService` or `WorkManager` (for background jobs on modern Android).
+* **Don’t:** Leak memory by holding references to activities or contexts.
+* **Don’t:** Start background services from the background on Android 8.0+ (use foreground service or WorkManager).
+
+**Manifest Declaration Example:**
+```xml
+<service
+    android:name=".MyForegroundService"
+    android:exported="false"
+    android:foregroundServiceType="location" />
+```
+
+**Security:**
+- Set `android:exported="false"` unless you intend for other apps to bind/start your service.
+- Use permissions (`android:permission`) to restrict access if needed.
+
+**Alternatives:**
+- For scheduled or deferrable work, prefer `WorkManager`.
+- For short-lived background tasks, use coroutines or `ExecutorService` in ViewModel or Repository layers.
+
+**Summary Table:**
+
+| Service Type      | Use Case                        | Threading         | Lifecycle Control         | UI?   |
+|-------------------|---------------------------------|-------------------|--------------------------|-------|
+| Started Service   | Ongoing background work         | Main (default)    | App or self stops        | No    |
+| Foreground Service| User-visible, long-running task | Main (default)    | App or self stops        | No    |
+| Bound Service     | Client-server communication     | Main (default)    | Unbinds when no clients  | No    |
+
+For most modern apps, use services only when necessary, and prefer higher-level APIs (WorkManager, JobScheduler) for background work.
 
 **Broadcast Receivers:** Components that listen for broadcasted `Intent`s (from the system or other apps). They have no UI and must be registered (statically in the manifest or dynamically in code). Example:
 
