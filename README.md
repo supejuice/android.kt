@@ -85,20 +85,64 @@ inline fun runTwice(block: () -> Unit) {
 ---
 
 ### **Delegation**
-Reuse behavior via `by` keyword.
+Reuse and compose behavior using the `by` keyword for both properties and interfaces.
+
+#### **Interface Delegation**
+Delegate implementation of an interface to another object, promoting composition over inheritance.
 
 ```kotlin
 interface Logger { fun log(msg: String) }
 class ConsoleLogger : Logger { override fun log(msg: String) = println(msg) }
 class Service(logger: Logger) : Logger by logger
 ```
+- `Service` automatically implements `Logger` by forwarding calls to the provided `logger`.
+
+**Real-life uses:**
+- Logging, analytics, or event tracking: inject different loggers (console, file, remote).
+- Wrapping APIs: add cross-cutting concerns (e.g., caching, validation) without inheritance.
+
+#### **Property Delegation**
+Delegate property access logic to reusable delegates.
+
+```kotlin
+val config: String by lazy { loadConfig() }
+var name: String by Delegates.observable("<init>") { _, old, new ->
+    println("Name changed from $old to $new")
+}
+```
+- `by lazy`: initializes the value on first access.
+- `by Delegates.observable`: runs a callback on value changes.
+
+**Custom property delegate:**
+```kotlin
+class NonEmptyString {
+    private var value: String = ""
+    operator fun getValue(thisRef: Any?, property: KProperty<*>) = value
+    operator fun setValue(thisRef: Any?, property: KProperty<*>, newValue: String) {
+        require(newValue.isNotEmpty()) { "Value cannot be empty" }
+        value = newValue
+    }
+}
+var username: String by NonEmptyString()
+```
 
 **Do:**
-- Use property delegation (`by lazy`, `by Delegates.observable`).
-- Use interface delegation for composition.
+- Use property delegation for lazy initialization, observable properties, or validation.
+- Use interface delegation to compose behaviors and avoid deep inheritance.
+- Prefer delegation for cross-cutting concerns (logging, caching, security).
 
 **Don’t:**
-- Overuse delegation for trivial cases.
+- Overuse delegation for trivial or one-off cases (adds indirection).
+- Delegate to objects with complex or hidden side effects.
+- Use property delegation when a simple getter/setter suffices.
+
+**Summary Table:**
+
+| Delegation Type      | Use Case                         | Example                        | Best Practice                        |
+|----------------------|----------------------------------|--------------------------------|--------------------------------------|
+| Interface Delegation | Compose behaviors, avoid inheritance | `class A(b: B) : B by b`      | Use for cross-cutting concerns       |
+| Property Delegation  | Lazy, observable, custom logic   | `val x by lazy { ... }`        | Use for reusable property patterns   |
+
 
 ---
 
