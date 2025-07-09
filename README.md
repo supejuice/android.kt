@@ -1,5 +1,248 @@
 # Android.kt
+## Kotlin Advanced
 
+### **Extension Functions & Properties**
+Add new functions or properties to existing classes without inheritance.
+
+```kotlin
+fun String.isEmail(): Boolean = contains("@") && contains(".")
+val List<Int>.sumOfSquares: Int get() = sumOf { it * it }
+```
+
+**Do:**
+- Use for utility methods and DSLs.
+- Keep extensions focused and non-intrusive.
+
+**Don’t:**
+- Overuse for core business logic.
+- Break encapsulation or rely on internals.
+
+---
+
+### **Higher-Order Functions & Lambdas**
+Functions that take or return other functions.
+
+```kotlin
+fun <T> List<T>.customFilter(predicate: (T) -> Boolean): List<T> =
+    this.filter(predicate)
+
+val evens = listOf(1,2,3,4).customFilter { it % 2 == 0 }
+```
+
+**Do:**
+- Use for callbacks, collection operations, and DSLs.
+- Prefer inline for small, performance-critical lambdas.
+
+**Don’t:**
+- Capture unnecessary references in lambdas (can cause leaks).
+- Overcomplicate APIs with too many function parameters.
+
+---
+
+### **Sealed Classes & Exhaustiveness**
+Restrict class hierarchies for type-safe state and event handling.
+
+```kotlin
+sealed class Result<out T>
+data class Success<T>(val data: T) : Result<T>()
+data class Error(val exception: Throwable) : Result<Nothing>()
+object Loading : Result<Nothing>()
+
+fun handle(result: Result<String>) = when (result) {
+    is Success -> println("Data: ${result.data}")
+    is Error -> println("Error: ${result.exception}")
+    Loading -> println("Loading...")
+}
+```
+
+**Do:**
+- Use sealed classes for state machines, events, and results.
+- Always handle all cases in `when` (exhaustiveness).
+
+**Don’t:**
+- Use sealed classes for open-ended hierarchies.
+- Forget to update `when` branches when adding subclasses.
+
+---
+
+### **Inline, Crossinline, Noinline**
+Control how lambdas are inlined for performance and restrictions.
+
+```kotlin
+inline fun runTwice(block: () -> Unit) {
+    block(); block()
+}
+```
+
+**Do:**
+- Use `inline` for small, performance-sensitive HOFs.
+- Use `crossinline` to prevent non-local returns.
+
+**Don’t:**
+- Inline large functions (increases bytecode size).
+- Use `noinline` unless you need to store lambdas.
+
+---
+
+### **Delegation**
+Reuse behavior via `by` keyword.
+
+```kotlin
+interface Logger { fun log(msg: String) }
+class ConsoleLogger : Logger { override fun log(msg: String) = println(msg) }
+class Service(logger: Logger) : Logger by logger
+```
+
+**Do:**
+- Use property delegation (`by lazy`, `by Delegates.observable`).
+- Use interface delegation for composition.
+
+**Don’t:**
+- Overuse delegation for trivial cases.
+
+---
+
+### **Coroutines Advanced**
+Use structured concurrency, channels, flows, and exception handling.
+
+```kotlin
+suspend fun fetchData(): String = withContext(Dispatchers.IO) { /* ... */ }
+
+val channel = Channel<Int>()
+GlobalScope.launch { channel.send(42) }
+```
+
+**Do:**
+- Use `supervisorScope` for independent child coroutines.
+- Handle exceptions with `CoroutineExceptionHandler`.
+
+**Don’t:**
+- Launch coroutines in `GlobalScope` for app logic.
+- Block threads inside coroutines.
+
+---
+
+### **Type Aliases & Inline Classes**
+Simplify complex types and add type safety.
+
+```kotlin
+typealias UserId = String
+
+@JvmInline
+value class Email(val value: String)
+```
+
+**Do:**
+- Use type aliases for readability.
+- Use inline/value classes for lightweight wrappers.
+
+**Don’t:**
+- Abuse type aliases for unrelated types.
+
+---
+
+### **Smart Casts & Contracts**
+Kotlin smart-casts types after checks; contracts can help the compiler.
+
+```kotlin
+fun printLength(obj: Any) {
+    if (obj is String) println(obj.length) // smart cast
+}
+```
+
+**Do:**
+- Use smart casts for null and type checks.
+- Use contracts for custom control-flow (advanced).
+
+**Don’t:**
+- Rely on smart casts after multi-threaded changes.
+
+---
+
+### **Generics & Reified Types**
+Use generics for type safety; `reified` for type checks at runtime.
+
+```kotlin
+inline fun <reified T> Gson.fromJson(json: String): T =
+    fromJson(json, T::class.java)
+```
+
+**Do:**
+- Use `reified` for type-safe reflection.
+- Use variance (`out`, `in`) for API design.
+
+**Don’t:**
+- Use star-projections (`*`) unless necessary.
+
+---
+
+### **Operator Overloading**
+Define custom behavior for operators.
+
+```kotlin
+data class Point(val x: Int, val y: Int) {
+    operator fun plus(other: Point) = Point(x + other.x, y + other.y)
+}
+```
+
+**Do:**
+- Overload operators only when it makes semantic sense.
+
+**Don’t:**
+- Overload for unrelated or confusing behaviors.
+
+---
+
+### **DSLs (Domain Specific Languages)**
+Build readable APIs using lambdas with receivers.
+
+```kotlin
+fun html(block: HtmlBuilder.() -> Unit): Html = HtmlBuilder().apply(block).build()
+```
+
+**Do:**
+- Use for configuration, builders, and UI.
+
+**Don’t:**
+- Overcomplicate with deeply nested DSLs.
+
+---
+
+### **Reflection & Annotations**
+Access class metadata and custom behaviors.
+
+```kotlin
+@Target(AnnotationTarget.CLASS)
+annotation class JsonSerializable
+
+@JsonSerializable
+class User(val name: String)
+```
+
+**Do:**
+- Use annotations for code generation and metadata.
+- Use reflection sparingly (runtime cost).
+
+**Don’t:**
+- Rely on reflection for performance-critical code.
+
+---
+
+### **Dos and Don’ts Summary**
+
+| Feature                | Do                                                      | Don’t                                 |
+|------------------------|---------------------------------------------------------|---------------------------------------|
+| Extension Functions    | Utility, DSLs, non-intrusive                            | Core logic, break encapsulation       |
+| Higher-Order Functions | Callbacks, collection ops, inline for perf              | Capture unnecessary refs, overuse     |
+| Sealed Classes         | State/events, exhaustiveness in `when`                  | Open-ended hierarchies, miss cases    |
+| Delegation             | Property/interface reuse                                | Trivial cases                         |
+| Coroutines             | Structured concurrency, handle exceptions               | GlobalScope, thread blocking          |
+| Generics/Reified       | Type safety, reflection                                 | Star-projections                      |
+| Operator Overloading   | Semantic, natural operators                             | Confusing/unrelated behaviors         |
+| DSLs                   | Builders, config, UI                                    | Deeply nested, unreadable             |
+| Reflection/Annotations | Metadata, codegen                                       | Perf-critical code                    |
+
+--- 
 ## Core Android Concepts
 
 ### **Activities**
@@ -700,10 +943,39 @@ ObjectAnimator.ofFloat(myView, "alpha", 1f, 0f).apply {
 ## System Internals
 
 ### **App Process & Lifecycle**
-Android apps run in a Linux process. The `Application` object is created on app launch.
+- **Process Model:**  
+    - Each Android app runs in its own Linux process, isolated from other apps for security and stability.
+    - The process is started by the system when any component (Activity, Service, BroadcastReceiver, ContentProvider) is needed.
+    - By default, all app components run in the main process, but you can specify a different process in the manifest using `android:process`.
+- **Application Object:**  
+    - The `Application` class is instantiated before any other class when the process starts.
+    - Override `onCreate()` for global initialization (dependency injection, logging, analytics).
+    - Only one `Application` instance exists per process.
+- **Component Lifecycle:**  
+    - Activities, Services, etc., are created and destroyed by the system as needed.
+    - The process may be killed at any time to reclaim resources; always save state in `onSaveInstanceState` or persistent storage.
+- **Process Death:**  
+    - The system may kill the process to free memory (especially in the background).
+    - Use persistent storage (SharedPreferences, database) for critical data.
+    - Avoid holding onto static references that may leak memory across process restarts.
+
+---
 
 ### **Looper & Handler**
-Each thread can have a `Looper` with a message queue.
+- **Main Thread (UI Thread):**  
+    - All UI operations must occur on the main thread.
+    - The main thread has a `Looper` and a message queue that processes messages and runnables sequentially.
+- **Looper:**  
+    - A `Looper` manages a message queue for a thread.
+    - The main thread’s `Looper` is prepared automatically; for background threads, call `Looper.prepare()` and `Looper.loop()`.
+- **Handler:**  
+    - A `Handler` posts messages and runnables to a thread’s message queue.
+    - Use `Handler(Looper.getMainLooper())` to post work to the main thread from any thread.
+    - `post()`, `postDelayed()`, `sendMessage()` are common methods.
+- **HandlerThread:**  
+    - A `HandlerThread` is a thread with its own `Looper`.
+    - Useful for background work that needs to process messages sequentially.
+    - Always quit the `HandlerThread` when done to avoid leaks.
 
 ```kotlin
 val handler = Handler(Looper.getMainLooper())
@@ -711,33 +983,72 @@ handler.postDelayed({ textView.text = "Hello" }, 1000L)
 ```
 
 **Do:**
-- Use `HandlerThread` for background thread with a Looper.
+- Use `HandlerThread` for background threads that need a message queue.
+- Use `Handler` to schedule work on the main thread or a background thread with a Looper.
+- Remove callbacks and messages (`handler.removeCallbacksAndMessages(null)`) when no longer needed to avoid leaks.
 
 **Don’t:**
-- Touch views from a non-main thread.
-- Block the main thread’s `Looper`.
+- Touch or update views from a non-main thread (causes exceptions and undefined behavior).
+- Block the main thread’s `Looper` (e.g., with long-running operations or infinite loops).
+- Forget to quit background `Looper`s when done.
 
 ---
 
 ### **Binder & AIDL**
-Android’s IPC mechanism is Binder. Use AIDL for remote IPC.
+- **Binder:**  
+    - The core IPC (Inter-Process Communication) mechanism in Android.
+    - Enables communication between different processes (e.g., app and system services, or two apps).
+    - Used internally for system services (e.g., ActivityManager, PackageManager).
+- **AIDL (Android Interface Definition Language):**  
+    - Used to define the interface for remote services.
+    - Generates code to marshal/unmarshal data across process boundaries.
+    - Only needed for IPC between different processes; for in-process communication, use interfaces or direct method calls.
+- **How Binder Works:**  
+    - Calls are marshaled into parcels and sent to the target process.
+    - The receiving process handles the call on a thread from the Binder thread pool (not the main thread).
+    - Be careful with thread safety and avoid blocking Binder threads.
+- **Security:**  
+    - Use permissions in the manifest to restrict which apps can bind to your service.
+    - Validate all incoming data in AIDL methods.
 
 **Key Points:**
-- AIDL is necessary only for remote IPC.
-- Calls via AIDL come in on a Binder thread pool.
+- Use AIDL only when you need to communicate across processes.
+- All AIDL calls are asynchronous and may come in on any thread (typically a Binder thread).
+- Avoid heavy work in AIDL methods; offload to background threads if needed.
 
 ---
 
 ### **Memory & Threads**
-Android uses Garbage Collection (ART) for memory.
+- **Memory Management:**  
+    - Android uses the ART (Android Runtime) garbage collector to manage memory.
+    - Memory is limited per app; exceeding limits causes `OutOfMemoryError`.
+    - Use tools like Android Studio Profiler and LeakCanary to detect leaks.
+- **Threading:**  
+    - The main thread handles UI and must not be blocked.
+    - Use background threads for disk, network, or CPU-intensive work.
+    - Options: `Thread`, `HandlerThread`, `Executors`, Kotlin coroutines (`Dispatchers.IO`, `Dispatchers.Default`), RxJava.
+- **Thread Pooling:**  
+    - Use `Executors.newFixedThreadPool()` or coroutines to limit concurrency.
+    - 2–4 threads are usually sufficient for intensive work; too many threads cause context switching overhead and memory pressure.
+- **Best Practices:**  
+    - Use `Executors.newSingleThreadExecutor()` for serialized background tasks.
+    - Use `Dispatchers.IO` for disk/network I/O in coroutines.
+    - Always shut down executors and threads when done.
+    - Avoid unbounded thread creation (can exhaust system resources).
+    - Do not assume objects are tied to a specific thread unless documented.
+    - Use synchronization or thread-safe data structures when sharing data across threads.
 
 **Do:**
-- Stick to 2–4 threads for intensive work.
-- Use `Executors.newSingleThreadExecutor()` or `Dispatchers.IO` for disk/network tasks.
+- Limit the number of concurrent threads for background work.
+- Use thread pools or coroutines for efficient concurrency.
+- Profile memory and thread usage regularly.
 
 **Don’t:**
-- Spawn unbounded threads.
-- Assume thread-affinity for objects.
+- Spawn unbounded or excessive threads.
+- Block the main thread with heavy work.
+- Assume thread-affinity for objects unless explicitly required (e.g., Views must be accessed on the main thread).
+
+---
 
 ---
 
@@ -886,16 +1197,59 @@ Do **not** store sensitive data in plaintext `SharedPreferences` or files. Use A
 ---
 
 ### **Obfuscation**
-Enable R8/ProGuard for release builds.
+
+Obfuscation helps protect your app from reverse engineering by renaming classes, methods, and fields, removing unused code, and optimizing bytecode. Android uses **R8** (default) or **ProGuard** for code shrinking and obfuscation.
+
+#### Enabling R8/ProGuard
+
+Enable R8/ProGuard for release builds in your `build.gradle`:
 
 ```gradle
-buildTypes {
-    release {
-        minifyEnabled true
-        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+android {
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 }
 ```
+
+#### ProGuard Rules File (`proguard-rules.pro`)
+
+Customize obfuscation and shrinking with rules in `proguard-rules.pro`.
+
+**Common Rules:**
+
+- **Keep Application Classes:**
+    ```proguard
+    -keep class com.example.app.** { *; }
+    ```
+
+- **Keep All Activities, Services, BroadcastReceivers, ContentProviders:**
+    ```proguard
+    -keep public class * extends android.app.Activity
+    -keep public class * extends android.app.Service
+    -keep public class * extends android.content.BroadcastReceiver
+    -keep public class * extends android.content.ContentProvider
+    ```
+
+- **Keep Custom Views (used in XML):**
+    ```proguard
+    -keep public class * extends android.view.View { public <init>(android.content.Context, android.util.AttributeSet); }
+    ```
+
+- **Keep Serializable/Parcelable Models:**
+    ```proguard
+    -keepclassmembers class * implements java.io.Serializable {
+        static final long serialVersionUID;
+        private static final java.io.ObjectStreamField[] serialPersistentFields;
+        private void writeObject(java.io.ObjectOutputStream);
+        private void readObject(java.io.ObjectInputStream);
+        java.lang.Object writeReplace();
+        java.lang.Object readResolve();
+    }
+    -keep class * implements android.os.Parcelable { *;
 
 ---
 
