@@ -2,7 +2,8 @@
 
 ## Core Android Concepts
 
-**Activities:** The primary UI entry point for an app, each implemented as a subclass of `Activity` (typically `AppCompatActivity`). The activity lifecycle (`onCreate`, `onStart`, `onResume`, `onPause`, `onStop`, `onDestroy`) dictates UI setup and resource management. For example:
+### **Activities**
+The primary UI entry point for an app, implemented as a subclass of `Activity` (typically `AppCompatActivity`). The activity lifecycle (`onCreate`, `onStart`, `onResume`, `onPause`, `onStop`, `onDestroy`) dictates UI setup and resource management.
 
 ```kotlin
 class MainActivity : AppCompatActivity() {
@@ -15,12 +16,18 @@ class MainActivity : AppCompatActivity() {
 }
 ```
 
-* **Do:** Use `savedInstanceState` to restore UI state.
-* **Do:** Keep the main-thread work minimal (inflate layouts, set up listeners) to avoid slow startup.
-* **Don’t:** Perform long-running operations on the UI thread (use coroutines, threads, or WorkManager instead).
-* **Don’t:** Leak the Activity context via static fields or long-lived references.
+**Do:**
+- Use `savedInstanceState` to restore UI state.
+- Keep main-thread work minimal (inflate layouts, set up listeners) to avoid slow startup.
 
-**Fragments:** A reusable UI component with its own lifecycle, always hosted by an Activity or another Fragment. Fragments encapsulate portions of UI and can be added, replaced, or removed dynamically. For example:
+**Don’t:**
+- Perform long-running operations on the UI thread (use coroutines, threads, or WorkManager).
+- Leak the Activity context via static fields or long-lived references.
+
+---
+
+### **Fragments**
+A reusable UI component with its own lifecycle, always hosted by an Activity or another Fragment. Fragments encapsulate portions of UI and can be added, replaced, or removed dynamically.
 
 ```kotlin
 class ProfileFragment : Fragment(R.layout.fragment_profile) {
@@ -30,43 +37,44 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
 }
 ```
 
-* **Do:** Use `childFragmentManager` for nested fragments.
-* **Do:** Communicate with other components via interfaces or shared `ViewModel`s.
-* **Don’t:** Add fragments directly to the back stack without user flow.
-* **Don’t:** Retain references to destroyed views (use `onDestroyView` cleanup or view binding properly).
+**Do:**
+- Use `childFragmentManager` for nested fragments.
+- Communicate with other components via interfaces or shared `ViewModel`s.
 
-**Services:** Components for background work without a UI. Services enable your app to keep running tasks even when the user is not interacting with the app. There are several types of services in Android:
+**Don’t:**
+- Add fragments directly to the back stack without user flow.
+- Retain references to destroyed views (use `onDestroyView` cleanup or view binding properly).
 
-- **Started Service:** Launched via `startService()` or `ContextCompat.startForegroundService()`. Runs until stopped with `stopSelf()` or `stopService()`. Used for tasks that should continue even if the user leaves the app (e.g., music playback, file downloads).
-- **Bound Service:** Allows components (activities, fragments, other apps) to bind via `bindService()` and interact with the service through an `IBinder` interface. The service runs as long as at least one client is bound.
-- **Foreground Service:** A started service that must display a persistent notification. Used for tasks that the user is actively aware of (e.g., fitness tracking, navigation, ongoing calls). Required for background tasks on Android 8.0+.
-- **IntentService (deprecated):** A convenience subclass of Service that handles asynchronous requests on a worker thread. Use a regular Service with coroutines or WorkManager instead.
+---
 
-**Service Lifecycle:**
+### **Services**
+Components for background work without a UI. Services enable your app to keep running tasks even when the user is not interacting with the app.
+
+#### Types of Services
+- **Started Service:** Launched via `startService()` or `ContextCompat.startForegroundService()`. Runs until stopped with `stopSelf()` or `stopService()`.
+- **Bound Service:** Allows components to bind via `bindService()` and interact with the service through an `IBinder` interface.
+- **Foreground Service:** A started service that must display a persistent notification. Required for background tasks on Android 8.0+.
+- **IntentService (deprecated):** Use a regular Service with coroutines or WorkManager instead.
+
+#### Service Lifecycle
 - `onCreate()`: Called once when the service is first created.
-- `onStartCommand(intent, flags, startId)`: Called each time the service is started. Return value determines restart behavior if killed (`START_STICKY`, `START_NOT_STICKY`, `START_REDELIVER_INTENT`).
-- `onBind(intent)`: Called when a client binds to the service. Return an `IBinder` for communication.
+- `onStartCommand(intent, flags, startId)`: Called each time the service is started.
+- `onBind(intent)`: Called when a client binds to the service.
 - `onUnbind(intent)`: Called when all clients have unbound.
 - `onRebind(intent)`: Called when new clients bind after `onUnbind`.
 - `onDestroy()`: Called when the service is destroyed.
 
-**Example: Started Service with Foreground Notification**
+#### Example: Started Service with Foreground Notification
 ```kotlin
 class MyForegroundService : Service() {
-    override fun onCreate() {
-        super.onCreate()
-        // Initialization logic
-    }
+    override fun onCreate() { /* ... */ }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Start foreground notification
         val notification = NotificationCompat.Builder(this, "channel_id")
             .setContentTitle("Service Running")
             .setSmallIcon(R.drawable.ic_service)
             .build()
         startForeground(1, notification)
-
-        // Start background work (use coroutine or thread)
         CoroutineScope(Dispatchers.IO).launch {
             doBackgroundWork()
             stopSelf()
@@ -75,15 +83,11 @@ class MyForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Cleanup resources
-    }
+    override fun onDestroy() { /* ... */ }
 }
 ```
 
-**Example: Bound Service**
+#### Example: Bound Service
 ```kotlin
 class MyBoundService : Service() {
     private val binder = LocalBinder()
@@ -91,13 +95,10 @@ class MyBoundService : Service() {
         fun getService(): MyBoundService = this@MyBoundService
     }
     override fun onBind(intent: Intent?): IBinder = binder
-
-    fun performAction() {
-        // Expose methods to clients
-    }
+    fun performAction() { /* ... */ }
 }
 ```
-In the client:
+**Client:**
 ```kotlin
 val connection = object : ServiceConnection {
     override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -109,26 +110,28 @@ val connection = object : ServiceConnection {
 bindService(Intent(this, MyBoundService::class.java), connection, Context.BIND_AUTO_CREATE)
 ```
 
-**Foreground Service Requirements (Android 8.0+):**
+#### Foreground Service Requirements (Android 8.0+)
 - Must call `startForeground()` with a notification within 5 seconds of starting.
-- Declare `android:foregroundServiceType` in the manifest for specific use cases (e.g., `location`, `mediaPlayback`, `dataSync`).
+- Declare `android:foregroundServiceType` in the manifest for specific use cases.
 
-**Best Practices:**
-* **Do:** Always offload heavy work from the main thread using coroutines, threads, or executors.
-* **Do:** Use `WorkManager` for deferrable, guaranteed background work (especially for jobs that must survive process death or device reboot).
-* **Do:** Use foreground services for user-visible, long-running tasks.
-* **Do:** Handle service restarts and process death gracefully (persist state if needed).
-* **Do:** Declare all services in `AndroidManifest.xml` with `<service>` tags.
-* **Do:** Request runtime permissions if your service needs them (e.g., location, foreground service).
-* **Do:** Stop the service with `stopSelf()` or `stopService()` when work is complete to avoid wasting resources.
+#### Best Practices
+**Do:**
+- Offload heavy work from the main thread using coroutines, threads, or executors.
+- Use `WorkManager` for deferrable, guaranteed background work.
+- Use foreground services for user-visible, long-running tasks.
+- Handle service restarts and process death gracefully.
+- Declare all services in `AndroidManifest.xml`.
+- Request runtime permissions if needed.
+- Stop the service with `stopSelf()` or `stopService()` when work is complete.
 
-* **Don’t:** Run long or blocking operations on the main thread (will cause ANR).
-* **Don’t:** Forget to release resources in `onDestroy()`.
-* **Don’t:** Use services for tasks that can be handled by `JobIntentService` or `WorkManager` (for background jobs on modern Android).
-* **Don’t:** Leak memory by holding references to activities or contexts.
-* **Don’t:** Start background services from the background on Android 8.0+ (use foreground service or WorkManager).
+**Don’t:**
+- Run long or blocking operations on the main thread.
+- Forget to release resources in `onDestroy()`.
+- Use services for tasks that can be handled by `JobIntentService` or `WorkManager`.
+- Leak memory by holding references to activities or contexts.
+- Start background services from the background on Android 8.0+.
 
-**Manifest Declaration Example:**
+#### Manifest Declaration Example
 ```xml
 <service
     android:name=".MyForegroundService"
@@ -136,15 +139,15 @@ bindService(Intent(this, MyBoundService::class.java), connection, Context.BIND_A
     android:foregroundServiceType="location" />
 ```
 
-**Security:**
+#### Security
 - Set `android:exported="false"` unless you intend for other apps to bind/start your service.
 - Use permissions (`android:permission`) to restrict access if needed.
 
-**Alternatives:**
+#### Alternatives
 - For scheduled or deferrable work, prefer `WorkManager`.
 - For short-lived background tasks, use coroutines or `ExecutorService` in ViewModel or Repository layers.
 
-**Summary Table:**
+#### Summary Table
 
 | Service Type      | Use Case                        | Threading         | Lifecycle Control         | UI?   |
 |-------------------|---------------------------------|-------------------|--------------------------|-------|
@@ -152,9 +155,10 @@ bindService(Intent(this, MyBoundService::class.java), connection, Context.BIND_A
 | Foreground Service| User-visible, long-running task | Main (default)    | App or self stops        | No    |
 | Bound Service     | Client-server communication     | Main (default)    | Unbinds when no clients  | No    |
 
-For most modern apps, use services only when necessary, and prefer higher-level APIs (WorkManager, JobScheduler) for background work.
+---
 
-**Broadcast Receivers:** Components that listen for broadcasted `Intent`s (from the system or other apps). They have no UI and must be registered (statically in the manifest or dynamically in code). Example:
+### **Broadcast Receivers**
+Components that listen for broadcasted `Intent`s (from the system or other apps). They have no UI and must be registered (statically in the manifest or dynamically in code).
 
 ```kotlin
 class NetworkChangeReceiver : BroadcastReceiver() {
@@ -165,34 +169,44 @@ class NetworkChangeReceiver : BroadcastReceiver() {
 }
 ```
 
-* **Do:** Unregister dynamic receivers in `onPause`/`onDestroy` to avoid leaks.
-* **Don’t:** Do heavy processing in `onReceive` (it times out if too slow) – start a Service or use WorkManager instead.
-* **Don’t:** Assume order of broadcast delivery or guaranteed delivery – code defensively.
+**Do:**
+- Unregister dynamic receivers in `onPause`/`onDestroy` to avoid leaks.
 
-**Content Providers:** Components that manage structured app data and expose it via a content URI. Often backed by a database, they allow other apps to query or modify the data with proper permissions. Example stub:
+**Don’t:**
+- Do heavy processing in `onReceive` (it times out if too slow).
+- Assume order of broadcast delivery or guaranteed delivery.
+
+---
+
+### **Content Providers**
+Components that manage structured app data and expose it via a content URI. Often backed by a database.
 
 ```kotlin
 class MyProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
-
     override fun query(
         uri: Uri, projection: Array<String>?, selection: String?, 
         selectionArgs: Array<String>?, sortOrder: String?
     ): Cursor? {
         // Perform database query and return Cursor
     }
-
     // Implement insert(), update(), delete(), getType()...
 }
 ```
 
-* **Do:** Declare the provider in `AndroidManifest.xml` with `<provider>`, and use `content://` URIs to share data.
-* **Don’t:** Expose sensitive data without permissions.
-* **Don’t:** Block the calling process; use asynchronous operations (e.g. return a cursor quickly or use `CursorLoader`).
+**Do:**
+- Declare the provider in `AndroidManifest.xml` with `<provider>`, and use `content://` URIs to share data.
+
+**Don’t:**
+- Expose sensitive data without permissions.
+- Block the calling process; use asynchronous operations.
+
+---
 
 ## Jetpack Components
 
-**Lifecycle (AndroidX):** The Lifecycle library provides `LifecycleOwner` (e.g. `Fragment`/`ComponentActivity`) and `LifecycleObserver`/`DefaultLifecycleObserver` to react to lifecycle changes without leaking resources. Use it to tie resources to lifecycle events. For example:
+### **Lifecycle (AndroidX)**
+Provides `LifecycleOwner` and `LifecycleObserver`/`DefaultLifecycleObserver` to react to lifecycle changes.
 
 ```kotlin
 class LoggerObserver : DefaultLifecycleObserver {
@@ -204,29 +218,38 @@ class LoggerObserver : DefaultLifecycleObserver {
 lifecycle.addObserver(LoggerObserver())
 ```
 
-* **Do:** Use `onCreateView`/`onDestroyView` in Fragments for view-related setup/teardown.
-* **Do:** Remove observers when no longer needed (though Lifecycle handles this for `DefaultLifecycleObserver`).
-* **Don’t:** Leak references to the `LifecycleOwner` (avoid static observers holding the owner).
+**Do:**
+- Use `onCreateView`/`onDestroyView` in Fragments for view-related setup/teardown.
+- Remove observers when no longer needed.
 
-**ViewModel:** Holds UI-related data that survives configuration changes. It separates UI logic from Activities/Fragments. Example ViewModel:
+**Don’t:**
+- Leak references to the `LifecycleOwner`.
+
+---
+
+### **ViewModel**
+Holds UI-related data that survives configuration changes.
 
 ```kotlin
 class CounterViewModel : ViewModel() {
     private val _count = MutableLiveData<Int>(0)
     val count: LiveData<Int> = _count
-
-    fun increment() {
-        _count.value = (_count.value ?: 0) + 1
-    }
+    fun increment() { _count.value = (_count.value ?: 0) + 1 }
 }
 ```
 
-* **Do:** Access shared ViewModels via `viewModels()` or `activityViewModels()` delegates.
-* **Do:** Use `viewModelScope` to launch coroutines tied to ViewModel's lifecycle.
-* **Don’t:** Put UI references (Context, Views) in a ViewModel – store UI state instead.
-* **Don’t:** Try to replace ViewModel with Singleton or global state (it’s scoped to UI controllers).
+**Do:**
+- Access shared ViewModels via `viewModels()` or `activityViewModels()`.
+- Use `viewModelScope` for coroutines.
 
-**LiveData:** An observable, lifecycle-aware data holder. Observers (Activities/Fragments) get updates only when in active states, preventing leaks. Example usage:
+**Don’t:**
+- Put UI references (Context, Views) in a ViewModel.
+- Replace ViewModel with Singleton or global state.
+
+---
+
+### **LiveData**
+An observable, lifecycle-aware data holder.
 
 ```kotlin
 viewModel.count.observe(viewLifecycleOwner) { value ->
@@ -234,11 +257,17 @@ viewModel.count.observe(viewLifecycleOwner) { value ->
 }
 ```
 
-* **Do:** Use `MutableLiveData` privately and expose immutable `LiveData`.
-* **Don’t:** Observe LiveData with non-lifecycle owners or after `onDestroy` (will auto-unregister anyway).
-* **Don’t:** Perform long tasks in `setValue`; use coroutines to update LiveData.
+**Do:**
+- Use `MutableLiveData` privately and expose immutable `LiveData`.
 
-**Navigation Component:** Simplifies in-app navigation and back-stack management. It uses a `NavHostFragment` or `NavHost` in Compose with a navigation graph (`nav_graph.xml`). Example in Compose:
+**Don’t:**
+- Observe LiveData with non-lifecycle owners.
+- Perform long tasks in `setValue`.
+
+---
+
+### **Navigation Component**
+Simplifies in-app navigation and back-stack management.
 
 ```kotlin
 NavHost(navController, startDestination = "home") {
@@ -250,12 +279,18 @@ NavHost(navController, startDestination = "home") {
 }
 ```
 
-* **Do:** Use Safe Args to pass type-safe arguments between destinations.
-* **Do:** Handle Up (back) navigation with `navController.navigateUp()`.
-* **Don’t:** Mix manual `FragmentTransaction` with Navigation – let the NavController manage the stack.
-* **Don’t:** Hardcode deep link URIs; configure them in the nav graph.
+**Do:**
+- Use Safe Args to pass type-safe arguments.
+- Handle Up (back) navigation with `navController.navigateUp()`.
 
-**Room:** The Jetpack persistence library that abstracts SQLite with compile-time safety. Define `@Entity` data classes, `@Dao` interfaces for queries, and a `RoomDatabase`. Example:
+**Don’t:**
+- Mix manual `FragmentTransaction` with Navigation.
+- Hardcode deep link URIs.
+
+---
+
+### **Room**
+Jetpack persistence library that abstracts SQLite.
 
 ```kotlin
 @Entity
@@ -265,7 +300,6 @@ data class User(@PrimaryKey val id: Int, val name: String)
 interface UserDao {
     @Query("SELECT * FROM user")
     fun getAllUsers(): Flow<List<User>>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: User)
 }
@@ -276,12 +310,18 @@ abstract class AppDatabase : RoomDatabase() {
 }
 ```
 
-* **Do:** Expose `Flow` or `LiveData` in DAO for reactive queries.
-* **Do:** Use migrations or `fallbackToDestructiveMigration()` for schema changes.
-* **Don’t:** Run database operations on the main thread (Room enforces this by default).
-* **Don’t:** Forget to close `Cursor`s or resources if using raw queries.
+**Do:**
+- Expose `Flow` or `LiveData` in DAO for reactive queries.
+- Use migrations or `fallbackToDestructiveMigration()` for schema changes.
 
-**WorkManager:** The recommended library for deferrable, guaranteed background work. Define `Worker` classes and enqueue requests:
+**Don’t:**
+- Run database operations on the main thread.
+- Forget to close `Cursor`s or resources if using raw queries.
+
+---
+
+### **WorkManager**
+Recommended library for deferrable, guaranteed background work.
 
 ```kotlin
 class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
@@ -290,186 +330,180 @@ class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, p
         return Result.success()
     }
 }
-
-// Enqueue work
 val workRequest = OneTimeWorkRequestBuilder<SyncWorker>().build()
 WorkManager.getInstance(context).enqueue(workRequest)
 ```
 
-* **Do:** Use `WorkManager` for tasks that must run even if the app or device restarts.
-* **Do:** Set constraints (e.g. network, charging) on `WorkRequest` as needed.
-* **Don’t:** Use `WorkManager` for immediate tasks; for real-time work prefer coroutines or threads.
-* **Don’t:** Forget to cancel or chain long-running work to avoid redundant tasks.
+**Do:**
+- Use `WorkManager` for tasks that must run even if the app or device restarts.
+- Set constraints on `WorkRequest` as needed.
+
+**Don’t:**
+- Use `WorkManager` for immediate tasks.
+- Forget to cancel or chain long-running work.
+
+---
 
 ## Jetpack Compose
 
-Jetpack Compose is Android’s modern UI toolkit using **@Composable** functions. It uses declarative code and automatically handles UI updates via recomposition.
+Jetpack Compose is Android’s modern UI toolkit using **@Composable** functions.
 
-* **Basic Usage:** Define composable functions annotated with `@Composable`. They can call other composables and must only be called from a composable context. Example:
+**Basic Usage:**
+```kotlin
+@Composable
+fun Greeting(name: String) {
+    Text(text = "Hello, $name!")
+}
+```
 
-  ```kotlin
-  @Composable
-  fun Greeting(name: String) {
-      Text(text = "Hello, $name!")
-  }
-  ```
+**State & Recomposition:**
+```kotlin
+@Composable
+fun Counter() {
+    var count by remember { mutableStateOf(0) }
+    Button(onClick = { count++ }) {
+        Text("Clicked $count times")
+    }
+}
+```
 
-* **State & Recomposition:** Hold local UI state with `remember { mutableStateOf(...) }`. Compose automatically re-runs (recomposes) functions when state changes. Example:
+**Side-Effects:**
+```kotlin
+@Composable
+fun LoadDataEffect(viewModel: MyViewModel) {
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+    }
+}
+```
 
-  ```kotlin
-  @Composable
-  fun Counter() {
-      var count by remember { mutableStateOf(0) }
-      Button(onClick = { count++ }) {
-          Text("Clicked $count times")
-      }
-  }
-  ```
+**UI Architecture:**
+```kotlin
+class MyViewModel : ViewModel() {
+    private val _text = MutableStateFlow("Hello")
+    val text: StateFlow<String> = _text
+}
 
-  The `remember` and `mutableStateOf` track state; changing `count` causes the composable to update. Compose encourages **state hoisting**: keep composables stateless and pass state/data from parents.
+@Composable
+fun MyScreen(viewModel: MyViewModel = viewModel()) {
+    val text by viewModel.text.collectAsState()
+    Text(text = text)
+}
+```
 
-* **Side-Effects:** Use Compose effect APIs for non-UI work. For example, `LaunchedEffect(key1) { ... }` runs a suspend block when keys change; `SideEffect { ... }` runs after every successful recomposition. These allow integrating coroutines or external state changes safely.
+**Compose Best Practices:**
+- Keep composables small and stateless.
+- Lift state to ViewModels or caller.
+- Avoid heavy logic in the UI layer.
 
-  ```kotlin
-  @Composable
-  fun LoadDataEffect(viewModel: MyViewModel) {
-      LaunchedEffect(Unit) {
-          viewModel.loadData()
-      }
-  }
-  ```
+**Dos and Don’ts:**
+- **Do:** Use `Modifier` for layout, styling, and click handlers.
+- **Do:** Use `@Preview` to rapidly iterate on UI.
+- **Do:** Use `rememberSaveable` for state that should survive process death.
+- **Don’t:** Perform side-effects or I/O directly in composable bodies.
+- **Don’t:** Over-nest composables excessively.
 
-* **UI Architecture:** In Compose, follow a unidirectional data flow. ViewModels expose `StateFlow` or `LiveData`, which can be observed via `collectAsState()` or `observeAsState()`. Example using `StateFlow`:
-
-  ```kotlin
-  class MyViewModel : ViewModel() {
-      private val _text = MutableStateFlow("Hello")
-      val text: StateFlow<String> = _text
-  }
-
-  @Composable
-  fun MyScreen(viewModel: MyViewModel = viewModel()) {
-      val text by viewModel.text.collectAsState()
-      Text(text = text)
-  }
-  ```
-
-* **Compose Best Practices:** Keep composables small and stateless, lift state to ViewModels or caller, and avoid heavy logic in the UI layer. Compose handles recomposition efficiently, but unnecessary recompositions can be avoided by keying state and using `remember` appropriately.
-
-* **Dos and Don’ts:**
-
-  * **Do:** Use `Modifier` for layout, styling, and click handlers.
-  * **Do:** Use `@Preview` to rapidly iterate on UI.
-  * **Do:** Use `rememberSaveable` for state that should survive process death (ViewModel handles most other state).
-  * **Don’t:** Perform side-effects or I/O directly in composable bodies (use effects or ViewModel).
-  * **Don’t:** Over-nest composables excessively; break into reusable pieces to optimize performance.
+---
 
 ## Coroutines and Concurrency
 
-Kotlin **Coroutines** provide asynchronous programming with structured concurrency. Key concepts:
+Kotlin **Coroutines** provide asynchronous programming with structured concurrency.
 
-* **Structured Concurrency:** Coroutines are launched in a `CoroutineScope`, and child coroutines are automatically canceled when the scope ends. This prevents leaks and lost coroutines. For example, `viewModelScope.launch { ... }` ties work to the ViewModel lifecycle. Use `coroutineScope { ... }` or `supervisorScope { ... }` in suspend functions to run parallel tasks safely.
+**Structured Concurrency:**  
+Coroutines are launched in a `CoroutineScope`, and child coroutines are automatically canceled when the scope ends.
 
-* **Coroutine Scopes:** Common scopes include `MainScope()`, `GlobalScope` (discouraged), `viewModelScope`, `lifecycleScope`, `IO` or `Default` (via `Dispatchers`).
+**Coroutine Scopes:**  
+Common scopes include `MainScope()`, `viewModelScope`, `lifecycleScope`, `IO` or `Default` (via `Dispatchers`).
 
-  * **Best Practice:** Avoid `GlobalScope`. Instead, inject and manage scopes via architecture (e.g. use `viewModelScope` in ViewModels).
-  * **Don’t:** Hardcode dispatchers in library code; instead, inject `CoroutineDispatcher` (see Kotlin docs).
-  * **Don’t:** Block the main thread; use `withContext(Dispatchers.IO) { ... }` for blocking I/O.
+**Best Practice:**  
+Avoid `GlobalScope`. Inject and manage scopes via architecture.
 
-* **Flow:** A cold asynchronous stream of values (part of Kotlinx.coroutines). Use `flow { emit(...) }` to create flows and `collect` to consume. Flows are sequential and suspend between emissions. Example:
+**Flow:**  
+A cold asynchronous stream of values.
 
-  ```kotlin
-  val flow: Flow<Int> = flow {
-      for (i in 1..5) {
-          delay(100)
-          emit(i)
-      }
-  }
-  viewModelScope.launch {
-      flow.collect { value ->
-          println("Received $value")
-      }
-  }
-  ```
+```kotlin
+val flow: Flow<Int> = flow {
+    for (i in 1..5) {
+        delay(100)
+        emit(i)
+    }
+}
+viewModelScope.launch {
+    flow.collect { value ->
+        println("Received $value")
+    }
+}
+```
 
-  Use `StateFlow`/`SharedFlow` for hot, stateful streams. They can be collected in Composables or LiveData.
+**Channels:**  
+A coroutine-safe queue for passing values between coroutines.
 
-* **Channels:** A channel is a coroutine-safe queue for passing values between coroutines. One coroutine can send values and another can receive. Example:
+```kotlin
+val channel = Channel<Int>()
+launch { for (i in 1..5) channel.send(i); channel.close() }
+launch { for (value in channel) println("Got $value") }
+```
 
-  ```kotlin
-  val channel = Channel<Int>()
-  // Producer
-  launch {
-      for (i in 1..5) channel.send(i)
-      channel.close()
-  }
-  // Consumer
-  launch {
-      for (value in channel) {
-          println("Got $value")
-      }
-  }
-  ```
+**Best Practices:**
+- Inject `CoroutineDispatcher`.
+- Make public APIs main-safe.
+- Only use `runBlocking` in tests or main functions.
+- Handle exceptions with structured coroutine builders.
 
-  Use channels for explicit producer-consumer patterns or ConflatedBroadcastChannel/SharedFlow for broadcasts.
-
-* **Best Practices:** Follow official guidelines for coroutine use:
-
-  * Inject `CoroutineDispatcher` (avoid `Dispatchers.IO` hardcoded in libraries).
-  * Make public APIs **main-safe**: if they do blocking work, use `withContext(Dispatchers.IO)` internally.
-  * Only use `runBlocking` in tests or main functions, not in production code.
-  * Handle exceptions with structured coroutine builders (`supervisorScope` or `CoroutineExceptionHandler`).
+---
 
 ## Dependency Injection (Hilt & Dagger)
 
-Use **Dependency Injection** to manage complex app dependencies:
+**Dagger:**  
+A compile-time DI framework using `@Module`, `@Component`, and `@Inject`.
 
-* **Dagger:** A compile-time DI framework using `@Module`, `@Component`, and `@Inject`. You declare how to provide objects in `@Module` classes, e.g.:
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+    @Provides fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
+}
+```
 
-  ```kotlin
-  @Module
-  @InstallIn(SingletonComponent::class)
-  object NetworkModule {
-      @Provides fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
-  }
-  ```
+**Hilt:**  
+A Jetpack library built on Dagger that reduces boilerplate.
 
-  Dagger generates code to assemble these dependencies.
+```kotlin
+@HiltAndroidApp
+class MyApp : Application()
 
-* **Hilt:** A Jetpack library built on Dagger that reduces boilerplate. Annotate your `Application` with `@HiltAndroidApp`, Activities/Fragments with `@AndroidEntryPoint`, and use `@Inject` in ViewModels or classes. Hilt automatically creates Dagger components for Android classes:
+@AndroidEntryPoint
+class MainActivity : AppCompatActivity() { ... }
 
-  ```kotlin
-  @HiltAndroidApp
-  class MyApp : Application()
+class Repo @Inject constructor(private val api: ApiService) { ... }
+```
 
-  @AndroidEntryPoint
-  class MainActivity : AppCompatActivity() { ... }
+**Do:**
+- Prefer Hilt for Android projects.
+- Use constructor injection.
 
-  class Repo @Inject constructor(private val api: ApiService) { ... }
-  ```
+**Don’t:**
+- Create your own singletons manually.
+- Mix Hilt and manual Dagger components without careful design.
 
-  * **Do:** Prefer Hilt for Android projects for simpler setup and lifecycle-aware injection.
-  * **Do:** Use constructor injection (`@Inject constructor(...)`) whenever possible.
-  * **Don’t:** Create your own singletons manually; let Hilt manage scope.
-  * **Don’t:** Mix Hilt and manual Dagger components in the same codebase without careful design – Hilt expects control of the DI graph.
+---
 
 ## Architecture Patterns
 
-**MVVM (Model-View-ViewModel):** Separates UI (View) from business logic (ViewModel) and data (Model).
+### **MVVM (Model-View-ViewModel)**
+Separates UI (View) from business logic (ViewModel) and data (Model).
 
-* **View:** Activities/Fragments (stateless UI) observing `LiveData`/`StateFlow` from ViewModel.
-* **ViewModel:** Holds UI state and calls use-cases or repository methods.
-* **Model (Repository):** Manages data (network, database) and domain models.
+- **View:** Activities/Fragments observing `LiveData`/`StateFlow`.
+- **ViewModel:** Holds UI state and calls use-cases or repository methods.
+- **Model (Repository):** Manages data (network, database).
 
-Example flow: ViewModel calls a repository, updates `LiveData`, UI observes and updates.
+---
 
-**MVI (Model-View-Intent):** Emphasizes unidirectional data flow. Entire UI state is represented as an immutable data class. User actions are sent as “intents” to the ViewModel, which produces a new state. Example skeleton:
+### **MVI (Model-View-Intent)**
+Emphasizes unidirectional data flow.
 
 ```kotlin
-// Intent (user action)
 sealed class MyIntent { object LoadData : MyIntent() }
-
-// State
 data class MyState(val loading: Boolean = false, val items: List<String> = emptyList())
 
 class MyViewModel : ViewModel() {
@@ -490,22 +524,23 @@ class MyViewModel : ViewModel() {
 }
 ```
 
-* **Do:** Keep state immutable and emit new state on each update.
-* **Do:** Render UI purely from the state (`collectAsState()` in Compose, `observe` in XML).
-* **Don’t:** Have multiple independent sources of truth; keep one authoritative state object.
+**Do:**
+- Keep state immutable and emit new state on each update.
+- Render UI purely from the state.
 
-**Clean Architecture:** Organizes code into layers with strict dependencies. Typically:
+**Don’t:**
+- Have multiple independent sources of truth.
 
-* **Domain Layer:** Pure Kotlin module (no Android deps) containing business logic (entities, use-cases). Does **not** depend on data or presentation.
-* **Data Layer:** Implements repositories and data sources (network, DB), depends on domain interfaces.
-* **Presentation Layer:** UI (Activities/Fragments/Compose) and ViewModels, depends on domain (use-cases) but not data layer.
+---
+
+### **Clean Architecture**
+Organizes code into layers with strict dependencies.
 
 ```
 Presentation ---> Domain ---> (Interfaces) ---> Data
 ```
 
-Example (using a use-case):
-
+**Example:**
 ```kotlin
 // Domain layer
 class FetchUsersUseCase(private val repo: UserRepository) {
@@ -514,9 +549,7 @@ class FetchUsersUseCase(private val repo: UserRepository) {
 
 // Presentation layer (ViewModel)
 class UserViewModel(private val fetchUsers: FetchUsersUseCase): ViewModel() {
-    val users = liveData {
-        emit(fetchUsers())
-    }
+    val users = liveData { emit(fetchUsers()) }
 }
 
 // Data layer (implements UserRepository)
@@ -525,83 +558,107 @@ class UserRepositoryImpl : UserRepository {
 }
 ```
 
-* **Do:** Keep domain layer free of Android or framework libraries.
-* **Do:** Use interfaces for repository contracts.
-* **Don’t:** Allow data or presentation to access Android APIs in the domain layer.
-* **Don’t:** Bypass use-cases; keep logic out of Activities/Fragments.
+**Do:**
+- Keep domain layer free of Android or framework libraries.
+- Use interfaces for repository contracts.
+
+**Don’t:**
+- Allow data or presentation to access Android APIs in the domain layer.
+- Bypass use-cases.
+
+---
 
 ## Modularization
 
-Modularize large codebases into Gradle modules (features, libraries) to improve build performance and code organization. Each module is a self-contained Gradle project with its own code and dependencies. Benefits include improved **reusability**, strict dependency control, and parallel builds.
+Modularize large codebases into Gradle modules (features, libraries) to improve build performance and code organization.
 
-* **Setup:** In Android Studio, use “New Module” to create `:core`, `:feature:login`, etc. Move related code (UI, domain, data) into feature modules. Example `settings` module could be an Android library or dynamic feature.
-* **Dynamic Feature Modules:** With Android App Bundles, you can deliver modules on-demand. Mark feature modules with `dist:module` in `AndroidManifest.xml`. This lets you split the APK so rarely-used features don’t bloat the initial install.
+**Setup:**  
+Use “New Module” to create `:core`, `:feature:login`, etc.
 
-  ```xml
-  <dist:module
-      dist:instant="false"
-      dist:title="@string/title_profile">
-      <dist:delivery>
-          <dist:onDemand />
-      </dist:delivery>
-  </dist:module>
-  ```
-* **Do:** Enforce encapsulation: make module APIs minimal and mark classes `internal` if they shouldn’t be public.
-* **Do:** Use Gradle composite builds or version catalogs for cross-module dependencies management.
-* **Don’t:** Over-modularize (avoid hundreds of tiny modules). Balance granularity – too fine increases build complexity.
-* **Don’t:** Duplicate code across modules; shared logic should live in a common library module.
+**Dynamic Feature Modules:**  
+With Android App Bundles, you can deliver modules on-demand.
+
+```xml
+<dist:module
+    dist:instant="false"
+    dist:title="@string/title_profile">
+    <dist:delivery>
+        <dist:onDemand />
+    </dist:delivery>
+</dist:module>
+```
+
+**Do:**
+- Enforce encapsulation.
+- Use Gradle composite builds or version catalogs.
+
+**Don’t:**
+- Over-modularize.
+- Duplicate code across modules.
+
+---
 
 ## Performance
 
-**Memory Management:** Use the Android Studio **Memory Profiler** to track allocations and leaks. Avoid memory leaks (e.g. static references to `Context` or `Activity`). Implement `onTrimMemory()` in Activities to release heavy resources when the app goes background:
+### **Memory Management**
+Use the Android Studio **Memory Profiler** to track allocations and leaks.
 
 ```kotlin
 override fun onTrimMemory(level: Int) {
     if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-        // Release UI-related memory (bitmaps, caches)
+        // Release UI-related memory
     }
     if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
-        // Release background processing memory (close DB, large data structures)
+        // Release background processing memory
     }
 }
 ```
 
-* **Do:** Use `ApplicationContext` where appropriate (e.g. `applicationContext` vs `activity`).
-* **Do:** Utilize tools like LeakCanary to catch leaks in development.
-* **Don’t:** Cache large objects or bitmaps without clearing them.
-* **Don’t:** Use too much static in Android (it ties objects to app lifetime).
+**Do:**
+- Use `ApplicationContext` where appropriate.
+- Utilize tools like LeakCanary.
 
-**UI Rendering:** Diagnose slow UI frames with tools: **Profile GPU Rendering** and **Layout Inspector**. Overdraw (drawing the same pixel multiple times) wastes GPU time. Use the Debug GPU Overdraw visualization in Developer Options to spot it. Optimization tips:
+**Don’t:**
+- Cache large objects or bitmaps without clearing them.
+- Use too much static in Android.
 
-* Use flatter view hierarchies (ConstraintLayout, Compose) and remove unnecessary backgrounds.
-* Offload complex rendering (animations, bitmaps) to the GPU or use `RenderScript`/`GPU` where applicable.
-* **Do:** Ensure `android:hardwareAccelerated="true"` (default) for smooth drawing.
-* **Don’t:** Overuse `layout_weight` or deep nested layouts.
+---
 
-**Startup Time:** Cold start time (to first frame) should be minimized.  Loading/inflating views in `Activity.onCreate()` is the heaviest operation, so keep it lean. Use `Application.onCreate()` only for essential init. Tools:
+### **UI Rendering**
+Diagnose slow UI frames with **Profile GPU Rendering** and **Layout Inspector**.
 
-* Android Studio **Startup Profiler** or **Perfetto** to trace the startup path.
-* Enable `reportFullyDrawn()` to measure time to full UI.
-* **Do:** Delay non-critical work (e.g. analytics init) to after launch.
-* **Don’t:** Do disk or network I/O synchronously at startup.
-* **Don’t:** Load huge resources or layouts on main thread without optimization.
+**Tips:**
+- Use flatter view hierarchies.
+- Offload complex rendering to the GPU.
+- Ensure `android:hardwareAccelerated="true"`.
+
+---
+
+### **Startup Time**
+Minimize cold start time.
+
+**Tools:**
+- Android Studio **Startup Profiler** or **Perfetto**.
+- Enable `reportFullyDrawn()`.
+
+**Do:**
+- Delay non-critical work to after launch.
+
+**Don’t:**
+- Do disk or network I/O synchronously at startup.
+
+---
 
 ## Custom Views and Animations
 
-When you need a unique UI component or performance beyond XML views, implement a custom `View` by overriding drawing methods. Key steps:
-
-* Override `onDraw(canvas: Canvas)` and use `Paint` and `Canvas` to draw primitives (circles, text, paths).
-* Pre-create expensive objects (e.g. `Paint`, `Path`) in initialization to avoid recreating them on every draw.
-
-Example custom view drawing a circle:
+### **Custom Views**
+Override drawing methods for unique UI components.
 
 ```kotlin
 class CircleView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLUE
-    }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLUE }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val radius = min(width, height) / 2f
@@ -610,12 +667,18 @@ class CircleView @JvmOverloads constructor(
 }
 ```
 
-* **Do:** Handle padding and `onMeasure` if needed for `wrap_content`.
-* **Do:** Use `invalidate()` to request redraw when state changes.
-* **Don’t:** Allocate new objects (e.g. `new Paint()`, `new Path()`) inside `onDraw` each frame – reuse them.
-* **Don’t:** Block the UI in custom view drawing; keep `onDraw` efficient.
+**Do:**
+- Handle padding and `onMeasure` if needed.
+- Use `invalidate()` to request redraw.
 
-**Animations:** Use Android’s property animation APIs (`ObjectAnimator`, `ValueAnimator`, `ViewPropertyAnimator`) for view animations. Example fade-out:
+**Don’t:**
+- Allocate new objects inside `onDraw`.
+- Block the UI in custom view drawing.
+
+---
+
+### **Animations**
+Use property animation APIs for view animations.
 
 ```kotlin
 ObjectAnimator.ofFloat(myView, "alpha", 1f, 0f).apply {
@@ -624,46 +687,64 @@ ObjectAnimator.ofFloat(myView, "alpha", 1f, 0f).apply {
 }
 ```
 
-For layout transitions, consider `MotionLayout` (in ConstraintLayout) for rich animations via XML. In Compose, use `animate*AsState` or `Transition`s.
+**Do:**
+- Use hardware-accelerated properties.
+- Use `AnimatorListener` or `doOnEnd` to trigger logic after animation.
 
-* **Do:** Use hardware-accelerated properties (`translation`, `alpha`, `scale`) for smooth animations.
-* **Do:** Use `AnimatorListener` or `doOnEnd` to trigger logic after animation.
-* **Don’t:** Animate layout params on the main thread in a loop; use animator APIs instead.
-* **Don’t:** Forget to `.cancel()` animators in activities/fragments to avoid leaks.
+**Don’t:**
+- Animate layout params on the main thread in a loop.
+- Forget to `.cancel()` animators.
+
+---
 
 ## System Internals
 
-**App Process & Lifecycle:** Android apps run in a Linux process. The `Application` object is created on app launch, then the main thread (UI thread) calls `onCreate()` of the initial `Activity`. Understand cold vs warm vs hot starts (cold includes process launch and full init, warm may reuse process, hot just resumes). Use `onCreate()`, `onStart()`, `onResume()`, etc. callbacks to manage state transitions.
+### **App Process & Lifecycle**
+Android apps run in a Linux process. The `Application` object is created on app launch.
 
-**Looper & Handler:** Each thread can have a `Looper` with a message queue. The main thread has a `Looper` by default. A `Handler` is bound to a `Looper` and can post `Message`s or `Runnable`s to it. Example:
+### **Looper & Handler**
+Each thread can have a `Looper` with a message queue.
 
 ```kotlin
 val handler = Handler(Looper.getMainLooper())
 handler.postDelayed({ textView.text = "Hello" }, 1000L)
 ```
 
-This posts a task to run on the main thread’s queue after a delay. Internally, `Looper.loop()` processes the queue and dispatches to `Handler.handleMessage()`.
+**Do:**
+- Use `HandlerThread` for background thread with a Looper.
 
-* **Do:** Use `HandlerThread` if you need a background thread with a Looper.
-* **Don’t:** Touch views from a non-main thread (always update UI via main `Looper` or `runOnUiThread`).
-* **Don’t:** Block the main thread’s `Looper` (avoid long loops or sleep).
+**Don’t:**
+- Touch views from a non-main thread.
+- Block the main thread’s `Looper`.
 
-**Binder & AIDL:** Android’s IPC mechanism is Binder. If your app uses a bound service accessible to other processes, define an AIDL interface. AIDL generates an `IBinder` stub to handle cross-process calls. Key points:
+---
 
-* AIDL is necessary only for remote IPC (different apps) or for multi-threaded service.
-* Calls via AIDL come in on a Binder thread pool; you must make your implementation thread-safe.
-* Use the `oneway` keyword for asynchronous (no-block) remote calls.
+### **Binder & AIDL**
+Android’s IPC mechanism is Binder. Use AIDL for remote IPC.
 
-**Memory & Threads:** Android uses Garbage Collection (ART) for memory. Monitor heap usage and handle low-memory (`onTrimMemory` above). Use `Thread` pools (e.g. `Executors` or `CoroutineDispatcher`) for background tasks. Android system also has a pool of Binder threads for each process to handle IPC.
+**Key Points:**
+- AIDL is necessary only for remote IPC.
+- Calls via AIDL come in on a Binder thread pool.
 
-* **Do:** Stick to 2–4 threads for intensive work; oversizing thread pools can cause contention.
-* **Do:** Use `Executors.newSingleThreadExecutor()` or `Dispatchers.IO` for disk/network tasks.
-* **Don’t:** Spawn unbounded threads (`Thread()`) without managing their lifecycle.
-* **Don’t:** Assume thread-affinity for objects; always lock/synchronize shared data or confine via coroutines.
+---
+
+### **Memory & Threads**
+Android uses Garbage Collection (ART) for memory.
+
+**Do:**
+- Stick to 2–4 threads for intensive work.
+- Use `Executors.newSingleThreadExecutor()` or `Dispatchers.IO` for disk/network tasks.
+
+**Don’t:**
+- Spawn unbounded threads.
+- Assume thread-affinity for objects.
+
+---
 
 ## Networking (Retrofit & OkHttp)
 
-**Retrofit:** A type-safe HTTP client. Define service interfaces with annotations:
+### **Retrofit**
+A type-safe HTTP client.
 
 ```kotlin
 interface ApiService {
@@ -679,12 +760,18 @@ val retrofit = Retrofit.Builder()
 val api = retrofit.create(ApiService::class.java)
 ```
 
-* **Do:** Use `suspend` functions (Coroutine support) or RxJava adapters.
-* **Do:** Always call network APIs off the main thread (Retrofit `suspend` does this by default).
-* **Don’t:** Forget to check `Response.isSuccessful` and handle HTTP errors (e.g. 4xx, 5xx).
-* **Don’t:** Keep API keys or secrets in code (use NDK or secure storage if needed).
+**Do:**
+- Use `suspend` functions.
+- Always call network APIs off the main thread.
 
-**OkHttp:** The HTTP client used by Retrofit. Configure via `OkHttpClient.Builder`. Use interceptors for logging or auth:
+**Don’t:**
+- Forget to check `Response.isSuccessful`.
+- Keep API keys or secrets in code.
+
+---
+
+### **OkHttp**
+The HTTP client used by Retrofit.
 
 ```kotlin
 val logging = HttpLoggingInterceptor().apply {
@@ -696,17 +783,20 @@ val client = OkHttpClient.Builder()
     .build()
 ```
 
-* **Interceptors:** Powerful for modifying requests/responses or adding headers. Application interceptors (`addInterceptor`) run once, network interceptors (`addNetworkInterceptor`) see redirects. You **must** call `chain.proceed(request)` exactly once per interceptor to continue the call.
+**Do:**
+- Use connection pooling, caching, and timeouts.
+- Handle exceptions.
 
-  * Example logging interceptor (from OkHttp docs): it logs request and response details.
-* **Do:** Use connection pooling, caching (`.cache(...)`), and timeouts to optimize network.
-* **Do:** Handle exceptions (`IOException` for network, `HttpException` for HTTP errors).
-* **Don’t:** Perform retries without backoff or condition.
-* **Don’t:** Ignore SSL issues; use HTTPS and pin certificates if possible.
+**Don’t:**
+- Perform retries without backoff.
+- Ignore SSL issues.
+
+---
 
 ## Testing
 
-**Unit Testing:** Test business logic with JUnit and mocking (MockK or Mockito for Kotlin). Use `runBlockingTest`/`runTest` from `kotlinx-coroutines-test` to test suspending code. Example with MockK:
+### **Unit Testing**
+Test business logic with JUnit and mocking.
 
 ```kotlin
 @Test
@@ -718,11 +808,17 @@ fun `loadUsers updates live data`() = runTest {
 }
 ```
 
-* **Do:** Mock dependencies (e.g. repositories) so unit tests are fast and deterministic.
-* **Do:** Use `@Before` for setup and `@After` for cleanup.
-* **Don’t:** Hit the real database or network in unit tests.
+**Do:**
+- Mock dependencies.
+- Use `@Before` for setup and `@After` for cleanup.
 
-**Instrumentation (Android) Tests:** Use AndroidX Test with Espresso for UI. Example Espresso usage:
+**Don’t:**
+- Hit the real database or network in unit tests.
+
+---
+
+### **Instrumentation (Android) Tests**
+Use AndroidX Test with Espresso for UI.
 
 ```kotlin
 @Test
@@ -732,10 +828,10 @@ fun clickButton_opensDetail() {
 }
 ```
 
-* **Do:** Run Espresso tests on emulators or devices, isolate them (clean state).
-* **Don’t:** Use `Thread.sleep`; use `IdlingResource` or Espresso’s sync mechanisms.
+---
 
-**Compose UI Tests:** Use `createComposeRule()` and `onNode` assertions. Example:
+### **Compose UI Tests**
+Use `createComposeRule()` and `onNode` assertions.
 
 ```kotlin
 @get:Rule val composeTestRule = createComposeRule()
@@ -749,7 +845,10 @@ fun testGreetingDisplay() {
 }
 ```
 
-**Flow Testing:** Use `runTest` and collect Flows. The Turbine library simplifies this:
+---
+
+### **Flow Testing**
+Use `runTest` and collect Flows. The Turbine library simplifies this.
 
 ```kotlin
 @Test
@@ -766,21 +865,28 @@ fun testFlowEmitsValues() = runTest {
 }
 ```
 
-For `StateFlow`, either assert on its `value` or use Turbine.
+**Do:**
+- Test coroutine code with test dispatchers.
+- Use Turbine or `toList()` in `runTest` for collecting Flows.
 
-* **Do:** Test coroutine code with `UnconfinedTestDispatcher` or `StandardTestDispatcher` to control execution.
-* **Do:** Use `Turbine` or `toList()` in `runTest` for collecting Flows.
-* **Don’t:** Rely on timing; make tests deterministic by controlling dispatchers.
-* **Don’t:** Test private methods directly; test via public interfaces (like ViewModel behavior).
+**Don’t:**
+- Rely on timing; make tests deterministic.
+- Test private methods directly.
+
+---
 
 ## Security
 
-**Secure Storage:** Do **not** store sensitive data (tokens, passwords) in plaintext `SharedPreferences` or files. Use Android Keystore and AndroidX Security libraries:
+### **Secure Storage**
+Do **not** store sensitive data in plaintext `SharedPreferences` or files. Use Android Keystore and AndroidX Security libraries.
 
-* **Android Keystore:** Store cryptographic keys so they are non-exportable. Example: generate an AES key in the Keystore and use it to encrypt data.
-* **EncryptedSharedPreferences:** Part of `androidx.security:security-crypto`, uses keystore-backed keys to encrypt preferences.
+- **Android Keystore:** Store cryptographic keys so they are non-exportable.
+- **EncryptedSharedPreferences:** Uses keystore-backed keys to encrypt preferences.
 
-**Obfuscation:** Enable R8/ProGuard for release builds to obfuscate code and strip unused classes. This makes reverse-engineering harder (but not impossible). Example in `release` buildType:
+---
+
+### **Obfuscation**
+Enable R8/ProGuard for release builds.
 
 ```gradle
 buildTypes {
@@ -791,49 +897,51 @@ buildTypes {
 }
 ```
 
-**NDK (Native Code):** If using the NDK (C/C++), remember native code can also be reverse-engineered.
+---
 
-* **Do:** Avoid storing secrets in native code or resources; consider server-side key management.
-* **Don’t:** Rely on NDK alone for security; combine with signatures and checks.
+### **NDK (Native Code)**
+Native code can also be reverse-engineered.
 
-**Network Security:** Always use HTTPS/TLS. Use **Network Security Config** to enforce security policies. With an XML file, you can:
+**Do:**
+- Avoid storing secrets in native code or resources.
 
-* Disable cleartext traffic (`<base-config cleartextTrafficPermitted="false">`) to ensure only HTTPS.
-* Pin certificates or custom CAs to prevent MITM.
-* Use TLS 1.2+ on older Android (enable via security config if needed).
+---
 
-Example `network_security_config.xml` snippet:
+### **Network Security**
+Always use HTTPS/TLS. Use **Network Security Config** to enforce security policies.
 
 ```xml
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config>
         <domain includeSubdomains="true">api.example.com</domain>
-        <!-- Optionally pin certs here -->
     </domain-config>
 </network-security-config>
 ```
 
-* **Do:** Update `android:networkSecurityConfig` in the Manifest to point to this file.
-* **Do:** Use certificate pinning (in OkHttp or config) for extra security.
-* **Don’t:** Trust user-added CAs or allow cleartext (unless absolutely needed with a debug override).
+**Do:**
+- Update `android:networkSecurityConfig` in the Manifest.
+- Use certificate pinning for extra security.
+
+**Don’t:**
+- Trust user-added CAs or allow cleartext.
+
+---
 
 ## Gradle Build System
 
-**Build Optimization:** Follow Android’s official tips for faster builds. Key practices:
+### **Build Optimization**
+Follow Android’s official tips for faster builds.
 
-* **Enable Gradle Daemon and parallel builds:** In `gradle.properties`:
+- Enable Gradle Daemon and parallel builds in `gradle.properties`.
+- Use KSP instead of Kapt.
+- Avoid unnecessary resources.
+- Keep Android Gradle Plugin and dependencies up to date.
 
-  ```
-  org.gradle.daemon=true
-  org.gradle.parallel=true
-  ```
-* **Use KSP instead of Kapt:** KSP is faster for annotation processing (e.g. use Room KSP artifact).
-* **Avoid unnecessary resources:** Limit `resourceConfigurations` and `resConfigs` for debug builds to speed up packaging.
-* **Do:** Keep Android Gradle Plugin and dependencies up to date.
-* **Don’t:** Apply irrelevant plugins or tasks on all modules; scope them only where needed.
+---
 
-**Custom Gradle Tasks:** You can write tasks in Kotlin DSL. For example, to print version:
+### **Custom Gradle Tasks**
+Write tasks in Kotlin DSL.
 
 ```kotlin
 tasks.register("printVersion") {
@@ -843,10 +951,10 @@ tasks.register("printVersion") {
 }
 ```
 
-* **Do:** Reuse tasks and configuration across modules via convention plugins or Gradle scripts.
-* **Don’t:** Hardcode values; use `project.properties` or build config fields.
+---
 
-**Build Variants:** Define `buildTypes` (e.g., `debug`, `release`) and `productFlavors` (e.g., `free`, `paid`) in `module:app` Gradle:
+### **Build Variants**
+Define `buildTypes` and `productFlavors` in Gradle.
 
 ```gradle
 android {
@@ -866,33 +974,38 @@ android {
 }
 ```
 
-* Each combination (e.g. `demoDebug`, `fullRelease`) is a variant. You can customize source sets (`src/full/`, `src/demo/`).
-* **Do:** Use `applicationIdSuffix` or `versionNameSuffix` to distinguish flavors.
-* **Do:** Avoid duplicating code; share code in `src/main`.
-* **Don’t:** Have mismatched minSdk or compileSdk in different variants.
+**Do:**
+- Use `applicationIdSuffix` or `versionNameSuffix` to distinguish flavors.
+
+---
 
 ## Google Play Store
 
-**Publishing:** Build an **Android App Bundle (AAB)** for release. Use **Play App Signing** to let Google manage your signing key. This enhances security and allows Google to optimize APK splits for devices:
+### **Publishing**
+Build an **Android App Bundle (AAB)** for release. Use **Play App Signing**.
 
-* **Signing:** Upload a cryptographic key to Play Console or enroll in Google Play App Signing. Google then generates optimized APKs from your AAB.
-* **Versioning:** Follow semantic versioning with `versionCode` and `versionName` in Gradle.
+**Signing:**  
+Upload a cryptographic key to Play Console or enroll in Google Play App Signing.
 
-**Play Integrity API:** Integrate the Play Integrity API to ensure your app is genuine. Call it at critical points to verify the app’s authenticity:
+**Versioning:**  
+Follow semantic versioning with `versionCode` and `versionName` in Gradle.
 
-> “Call the Integrity API at important moments in your app to check that user actions and requests are coming from your unmodified app binary, installed by Google Play… Your backend can decide what to do next to prevent abuse”.
+---
 
-It helps protect against rooting, tampering, and fraud.
+### **Play Integrity API**
+Integrate the Play Integrity API to ensure your app is genuine.
 
-**Feature Delivery:** Use **Dynamic Feature Modules** with the Android App Bundle for on-demand or conditional delivery (as mentioned in Modularization). In Play Console:
+---
 
-* **On-demand modules:** Specify `installTime`, `onDemand`, or `conditional` (e.g. device features, user country) in the manifest.
-* **In-app updates and reviews:** Implement the Play In-App Updates API to prompt users to update, and the Review API for in-app feedback.
+### **Feature Delivery**
+Use **Dynamic Feature Modules** for on-demand or conditional delivery.
 
-**Do:** Test your release build and signing process (use `play` Gradle plugin or CLI).
-**Don’t:** Release debug builds or un-optimized APKs.
-**Do:** Monitor **Android Vitals** in Play Console for crashes and excessive startup time. Vitals consider 5s+ cold start (TTID) as bad.
-**Don’t:** Violate Play policies; follow guidelines (e.g. privacy, content) to avoid app rejection.
+---
+
+**Do:** Test your release build and signing process.  
+**Don’t:** Release debug builds or un-optimized APKs.  
+**Do:** Monitor **Android Vitals** in Play Console.  
+**Don’t:** Violate Play policies.
 
 ---
 
