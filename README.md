@@ -579,23 +579,43 @@ lifecycle.addObserver(LoggerObserver())
 ---
 
 ### **ViewModel**
-Holds UI-related data that survives configuration changes.
+Holds UI-related data that survives configuration changes and can restore state after process death.
 
 ```kotlin
-class CounterViewModel : ViewModel() {
-    private val _count = MutableLiveData<Int>(0)
+class CounterViewModel(
+    savedStateHandle: SavedStateHandle
+) : ViewModel() {
+    private val _count = savedStateHandle.getLiveData<Int>("count", 0)
     val count: LiveData<Int> = _count
-    fun increment() { _count.value = (_count.value ?: 0) + 1 }
+    fun increment() {
+        _count.value = (_count.value ?: 0) + 1
+        savedStateHandle["count"] = _count.value
+    }
 }
 ```
+- Use `SavedStateHandle` to persist and restore state (e.g., after process death or navigation).
+- Access with constructor injection; works automatically with navigation and Hilt.
+
+**With Hilt:**
+```kotlin
+@HiltViewModel
+class CounterViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle
+) : ViewModel() { /* ... */ }
+```
+- Annotate with `@HiltViewModel` and inject dependencies (including `SavedStateHandle`).
+- Obtain ViewModel in UI with `by viewModels<CounterViewModel>()`.
 
 **Do:**
 - Access shared ViewModels via `viewModels()` or `activityViewModels()`.
 - Use `viewModelScope` for coroutines.
+- Use `SavedStateHandle` for restoring state after process death.
+- Use Hilt for dependency injection in ViewModels.
 
 **Don’t:**
 - Put UI references (Context, Views) in a ViewModel.
 - Replace ViewModel with Singleton or global state.
+- Store large objects or non-serializable data in `SavedStateHandle`.
 
 ---
 
@@ -1459,31 +1479,92 @@ val client = OkHttpClient.Builder()
 ---
 
 ## Testing
+### **Unit Testing in Kotlin**
 
-### **Unit Testing**
-Test business logic with JUnit and mocking.
+Unit tests verify business logic in isolation, typically using JUnit. In Kotlin, use `kotlin.test` or JUnit 4/5.
 
+#### **Mocks vs Fakes**
+
+- **Mocks:** Simulate dependencies by verifying interactions or stubbing responses. Use for verifying calls, argument matching, or when the dependency is complex (e.g., network, database).
+- **Fakes:** Lightweight implementations with working logic, often in-memory. Use for simple, predictable behavior (e.g., in-memory repository).
+
+**When to use:**
+- Use **mocks** when you need to verify interactions or simulate errors.
+- Use **fakes** when you want realistic, fast, and deterministic behavior.
+
+#### **Sample: List Feature**
+
+Suppose you have a `UserRepository` and a `UserViewModel` that loads users.
+
+**Mock Example (using MockK):**
 ```kotlin
-@Test
-fun `loadUsers updates live data`() = runTest {
-    coEvery { repository.getUsers() } returns listOf(User(1, "Alice"))
-    val viewModel = UserViewModel(repository)
-    viewModel.loadUsers()
-    assertEquals(listOf(User(1, "Alice")), viewModel.users.value)
+class UserViewModelTest {
+    private val repository = mockk<UserRepository>()
+
+    @Test
+    fun `loadUsers updates users list`() = runTest {
+        coEvery { repository.getUsers() } returns listOf(User(1, "Alice"))
+        val viewModel = UserViewModel(repository)
+        viewModel.loadUsers()
+        assertEquals(listOf(User(1, "Alice")), viewModel.users.value)
+        coVerify { repository.getUsers() }
+    }
 }
 ```
 
-**Do:**
-- Mock dependencies.
-- Use `@Before` for setup and `@After` for cleanup.
+**Fake Example:**
+```kotlin
+class FakeUserRepository : UserRepository {
+    private val users = mutableListOf<User>()
+    override suspend fun getUsers(): List<User> = users
+    fun addUser(user: User) { users.add(user) }
+}
 
-**Don’t:**
-- Hit the real database or network in unit tests.
+@Test
+fun `loadUsers returns users from fake repo`() = runTest {
+    val fakeRepo = FakeUserRepository().apply { addUser(User(2, "Bob")) }
+    val viewModel = UserViewModel(fakeRepo)
+    viewModel.loadUsers()
+    assertEquals(listOf(User(2, "Bob")), viewModel.users.value)
+}
+```
+
+#### **Test Structure**
+
+- Use `@Before` for setup and `@After` for cleanup.
+- Use `runTest` for coroutine code.
+- Avoid real network or database in unit tests.
+
+---
+
+### **Robolectric Tests**
+
+Robolectric runs Android framework code on the JVM, enabling fast tests for Activities, Fragments, and Views without an emulator.
+
+**Sample Robolectric Test:**
+```kotlin
+@RunWith(RobolectricTestRunner::class)
+class MainActivityTest {
+    @Test
+    fun clickingButton_showsText() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        activity.findViewById<Button>(R.id.button).performClick()
+        val text = activity.findViewById<TextView>(R.id.textView).text
+        assertEquals("Clicked!", text)
+    }
+}
+```
+
+**Notes:**
+- Use Robolectric for logic/UI tests that don't require device hardware or full integration.
+- For real device features (camera, sensors), use instrumentation tests.
+- Robolectric is best for fast feedback and CI.
 
 ---
 
 ### **Instrumentation (Android) Tests**
-Use AndroidX Test with Espresso for UI.
+
+Use AndroidX Test and Espresso for UI tests on device/emulator.
 
 ```kotlin
 @Test
@@ -1496,6 +1577,7 @@ fun clickButton_opensDetail() {
 ---
 
 ### **Compose UI Tests**
+
 Use `createComposeRule()` and `onNode` assertions.
 
 ```kotlin
@@ -1513,6 +1595,7 @@ fun testGreetingDisplay() {
 ---
 
 ### **Flow Testing**
+
 Use `runTest` and collect Flows. The Turbine library simplifies this.
 
 ```kotlin
@@ -1540,6 +1623,17 @@ fun testFlowEmitsValues() = runTest {
 
 ---
 
+### **Other Testing Tips**
+
+- Use `InstantTaskExecutorRule` for LiveData tests.
+- Use `@HiltAndroidTest` for DI-enabled tests.
+- Prefer deterministic, isolated, and fast tests.
+- Use coverage tools (`jacoco`) to measure test coverage.
+- Separate unit, integration, and UI tests in your Gradle setup.
+
+
+---
+
 ## Security
 
 ### **Secure Storage**
@@ -1547,6 +1641,77 @@ Do **not** store sensitive data in plaintext `SharedPreferences` or files. Use A
 
 - **Android Keystore:** Store cryptographic keys so they are non-exportable.
 - **EncryptedSharedPreferences:** Uses keystore-backed keys to encrypt preferences.
+
+**Example: Securely storing data with EncryptedSharedPreferences**
+
+```kotlin
+// Add dependency in build.gradle:
+// implementation "androidx.security:security-crypto:1.1.0-alpha06"
+
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+
+val masterKey = MasterKey.Builder(context)
+    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+    .build()
+
+val sharedPreferences = EncryptedSharedPreferences.create(
+    context,
+    "secure_prefs",
+    masterKey,
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+)
+
+// Store sensitive data
+sharedPreferences.edit().putString("token", "my_secret_token").apply()
+
+// Retrieve sensitive data
+val token = sharedPreferences.getString("token", null)
+```
+
+**Example: Generating and using a key with Android Keystore**
+
+```kotlin
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+
+// Generate a key
+val keyGenerator = KeyGenerator.getInstance(
+    KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore"
+)
+keyGenerator.init(
+    KeyGenParameterSpec.Builder(
+        "my_key_alias",
+        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+    )
+        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+        .build()
+)
+keyGenerator.generateKey()
+
+// Retrieve the key
+val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+val secretKey = keyStore.getKey("my_key_alias", null) as SecretKey
+
+// Use the key for encryption
+val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+val ciphertext = cipher.doFinal("Sensitive data".toByteArray())
+```
+
+**Do:**
+- Use `EncryptedSharedPreferences` for storing sensitive key-value data.
+- Use Android Keystore for cryptographic operations and key management.
+
+**Don’t:**
+- Store secrets, tokens, or passwords in plaintext or regular SharedPreferences.
+- Hardcode sensitive data in your codebase.
 
 ---
 
@@ -1604,7 +1769,7 @@ Customize obfuscation and shrinking with rules in `proguard-rules.pro`.
         java.lang.Object readResolve();
     }
     -keep class * implements android.os.Parcelable { *;
-
+    ```
 ---
 
 ### **NDK (Native Code)**
@@ -1633,6 +1798,85 @@ Always use HTTPS/TLS. Use **Network Security Config** to enforce security polici
 
 **Don’t:**
 - Trust user-added CAs or allow cleartext.
+--
+
+### **Man-in-the-Middle (MITM) Attacks & SSL Pinning**
+
+#### **What is a MITM Attack?**
+A Man-in-the-Middle (MITM) attack occurs when an attacker intercepts and possibly alters the communication between your app and the server, often by exploiting insecure network connections or trusting compromised Certificate Authorities (CAs).
+
+**Risks:**
+- Sensitive data (tokens, credentials) can be stolen.
+- API requests/responses can be tampered with.
+
+#### **How to Prevent MITM Attacks**
+
+1. **Always Use HTTPS/TLS:**  
+    Never transmit sensitive data over HTTP.
+
+2. **Validate Certificates:**  
+    Ensure your app only trusts valid, non-expired certificates.
+
+3. **SSL Pinning:**  
+    Restrict your app to trust only specific server certificates or public keys, even if a CA is compromised.
+
+---
+
+#### **SSL Pinning in Android (with OkHttp)**
+
+**What is SSL Pinning?**  
+SSL pinning means your app only accepts a specific certificate or public key for your backend, preventing attackers from using fraudulent certificates.
+
+**How to Implement SSL Pinning with OkHttp:**
+
+1. **Obtain the SHA-256 hash of your server’s certificate or public key.**
+
+2. **Configure OkHttp with a CertificatePinner:**
+
+```kotlin
+val certificatePinner = CertificatePinner.Builder()
+     .add("api.example.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+     .build()
+
+val client = OkHttpClient.Builder()
+     .certificatePinner(certificatePinner)
+     .build()
+```
+- Replace the hash with your actual certificate’s SHA-256 pin.
+- You can get the pin using `openssl` or tools like [SSL Labs](https://www.ssllabs.com/ssltest/).
+
+**Multiple Pins (for rotation):**
+```kotlin
+.add("api.example.com", "sha256/OLD_PIN==")
+.add("api.example.com", "sha256/NEW_PIN==")
+```
+
+---
+
+#### **Testing SSL Pinning**
+
+- If the server’s certificate does not match the pinned value, OkHttp will throw an `SSLPeerUnverifiedException`.
+- Test with a proxy (e.g., Charles Proxy, mitmproxy) to ensure MITM attempts are blocked.
+
+---
+
+#### **Best Practices**
+
+**Do:**
+- Pin to the public key (not the certificate) to allow certificate renewal without breaking the app.
+- Pin all relevant subdomains if your API uses them.
+- Rotate pins before certificates expire.
+
+**Don’t:**
+- Pin to a test or staging certificate in production builds.
+- Disable certificate validation for debugging (never ship with `trustAll`).
+
+---
+
+#### **References**
+- [OkHttp Certificate Pinning Docs](https://square.github.io/okhttp/features/certificate_pinning/)
+- [Android Security: Network Security Config](https://developer.android.com/training/articles/security-config)
+- [OWASP: Certificate and Public Key Pinning](https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pinning)
 
 ---
 
@@ -1718,3 +1962,4 @@ Use **Dynamic Feature Modules** for on-demand or conditional delivery.
 ---
 
 **Sources:** Android official documentation and developer guides.
+
