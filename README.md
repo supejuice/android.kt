@@ -176,18 +176,60 @@ viewModelScope.launch { println(channel.receive()) }
 ```
 
 #### **Flows**
-- Use `Flow` for cold, asynchronous streams (e.g., database, network, UI events).
-- Combine, transform, and collect flows with operators (`map`, `filter`, `combine`, etc.).
 
-```kotlin
-val numbers = flow {
-    for (i in 1..3) emit(i)
-}
-numbers
-    .map { it * 2 }
-    .flowOn(Dispatchers.Default)
-    .collect { println(it) }
-```
+- **Cold Flows:**  
+    - A cold flow starts emitting values only when collected. Each collector triggers a new execution.
+    - Use for data sources where each consumer should get a fresh stream (e.g., database queries, network calls).
+    - **Example:**  
+        ```kotlin
+        val numbers = flow {
+                for (i in 1..3) emit(i)
+        }
+        numbers.collect { println(it) } // Each collect runs the block anew
+        ```
+
+- **Hot Flows:**  
+    - A hot flow emits values regardless of collectors. All collectors share the same stream.
+    - Use for shared, ongoing events (e.g., UI events, system broadcasts, shared state).
+    - Implemented via `SharedFlow` (stateless) or `StateFlow` (stateful).
+    - **Example:**  
+        ```kotlin
+        val sharedFlow = MutableSharedFlow<Int>()
+        // Emitting values
+        launch { sharedFlow.emit(1) }
+        // Multiple collectors receive the same emissions
+        sharedFlow.collect { println("A: $it") }
+        sharedFlow.collect { println("B: $it") }
+        ```
+
+- **When to Use Each:**
+    - **Cold Flow:**  
+        - One-off data fetches (e.g., repository pattern, database query).
+        - Each consumer needs an independent stream.
+        - *Example:*  
+            ```kotlin
+            fun getUser(id: Int): Flow<User> = flow { emit(api.fetchUser(id)) }
+            ```
+    - **Hot Flow:**  
+        - Shared state or events (e.g., UI state, notifications, connectivity changes).
+        - Multiple consumers need to observe the same updates.
+        - *Example:*  
+            ```kotlin
+            // ViewModel exposes UI state
+            val uiState = MutableStateFlow(UiState())
+            // UI observes changes
+            uiState.collect { render(it) }
+            ```
+
+- **Operators:**  
+    - Combine, transform, and collect flows with operators (`map`, `filter`, `combine`, etc.).
+    - *Example:*
+        ```kotlin
+        numbers
+                .map { it * 2 }
+                .flowOn(Dispatchers.Default)
+                .collect { println(it) }
+        ```
 
 #### **Exception Handling**
 - Use `try/catch` inside coroutines for local errors.
@@ -577,6 +619,21 @@ lifecycle.addObserver(LoggerObserver())
 - Leak references to the `LifecycleOwner`.
 
 ---
+### **ConstraintLayout**
+
+**ConstraintLayout** is a flexible and efficient Android layout that allows you to position and size widgets in a flat view hierarchy using constraints.
+
+#### **Key Concepts**
+- **Constraints:** Define relationships (left/right/top/bottom/baseline) between views or parent.
+- **Chains:** Create horizontal or vertical groups with flexible distribution.
+- **Guidelines & Barriers:** Position views relative to invisible lines or dynamic boundaries.
+- **Bias:** Fine-tune positioning between two constraints (e.g., 30% from left, 70% from right).
+- **Flat Hierarchy:** Reduces nested layouts, improving performance.
+
+#### **Best Practices**
+- Prefer ConstraintLayout for complex layouts over nested LinearLayouts/RelativeLayouts.
+- Use `match_constraint` (`0dp`) for flexible sizing between constraints.
+- Use tools in Android Studio Layout Editor for visual design.
 
 ### **ViewModel**
 Holds UI-related data that survives configuration changes and can restore state after process death.
@@ -692,26 +749,270 @@ abstract class AppDatabase : RoomDatabase() {
 ---
 
 ### **WorkManager**
-Recommended library for deferrable, guaranteed background work.
+
+**WorkManager** is the recommended AndroidX library for deferrable, guaranteed background work that must be executed even if the app exits or the device restarts. It is suitable for tasks that are expected to run eventually, but not necessarily immediately.
+
+---
+
+#### **Key Features**
+
+- **Guaranteed Execution:** Work is persisted and retried if the app or device restarts.
+- **Constraint Support:** Run work only under specific conditions (e.g., network, charging, idle).
+- **Chaining & Input/Output:** Chain multiple work requests and pass data between them.
+- **Periodic & One-Time Work:** Supports both one-off and recurring background tasks.
+- **Backoff & Retry:** Automatic retry with exponential or linear backoff.
+- **Foreground Services Integration:** For long-running or user-visible work.
+- **Observability:** Observe work status via LiveData or Flow.
+- **Unique & Named Work:** Prevent duplicate work or replace existing work by name.
+
+---
+
+#### **Types of Work**
+
+1. **OneTimeWorkRequest**
+    - For tasks that should run once.
+    ```kotlin
+    val workRequest = OneTimeWorkRequestBuilder<SyncWorker>().build()
+    WorkManager.getInstance(context).enqueue(workRequest)
+    ```
+
+2. **PeriodicWorkRequest**
+    - For tasks that should repeat at regular intervals (minimum 15 minutes).
+    ```kotlin
+    val periodicWork = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).build()
+    WorkManager.getInstance(context).enqueue(periodicWork)
+    ```
+
+3. **Unique Work**
+    - Ensures only one instance of a named work runs at a time.
+    ```kotlin
+    WorkManager.getInstance(context).enqueueUniqueWork(
+         "sync",
+         ExistingWorkPolicy.REPLACE,
+         workRequest
+    )
+    ```
+
+4. **Chained Work**
+    - Chain multiple work requests sequentially or in parallel.
+    ```kotlin
+    WorkManager.getInstance(context)
+         .beginWith(workA)
+         .then(workB)
+         .enqueue()
+    ```
+
+---
+
+#### **Constraints**
+
+Set conditions for when work should run:
 
 ```kotlin
-class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-    override fun doWork(): Result {
-        // Background sync logic
-        return Result.success()
-    }
-}
-val workRequest = OneTimeWorkRequestBuilder<SyncWorker>().build()
-WorkManager.getInstance(context).enqueue(workRequest)
+val constraints = Constraints.Builder()
+     .setRequiredNetworkType(NetworkType.CONNECTED)
+     .setRequiresCharging(true)
+     .build()
+
+val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+     .setConstraints(constraints)
+     .build()
 ```
 
+**Available Constraints:**
+- Network type (connected, unmetered, not required, etc.)
+- Charging state
+- Device idle
+- Battery not low
+- Storage not low
+
+---
+
+#### **Worker Types**
+
+- **Worker:** Standard, synchronous or blocking work.
+- **CoroutineWorker:** For suspending (coroutine) work.
+- **ListenableWorker:** For advanced, callback-based async work.
+
+**Example: CoroutineWorker**
+```kotlin
+class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+     override suspend fun doWork(): Result {
+          // Coroutine-based background work
+          return Result.success()
+     }
+}
+```
+
+---
+
+#### **Passing Data**
+
+**Input:**
+```kotlin
+val input = workDataOf("key" to "value")
+val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+     .setInputData(input)
+     .build()
+```
+**Output:**
+```kotlin
+override fun doWork(): Result {
+     val output = workDataOf("result" to "done")
+     return Result.success(output)
+}
+```
+
+---
+
+#### **Observing Work Status**
+
+```kotlin
+WorkManager.getInstance(context)
+     .getWorkInfoByIdLiveData(workRequest.id)
+     .observe(lifecycleOwner) { info ->
+          if (info?.state == WorkInfo.State.SUCCEEDED) { /* ... */ }
+     }
+```
+
+---
+
+#### **Integrating Foreground and Background Services with WorkManager**
+
+WorkManager is designed to replace most background and foreground service use cases for deferrable, guaranteed work. Here’s how to integrate both patterns:
+
+---
+
+**Background Work:**  
+For most background tasks (sync, uploads, etc.), use a `Worker` or `CoroutineWorker` as shown above. WorkManager handles scheduling, retries, and constraints.
+
+---
+
+**Foreground Work (User-Visible):**  
+If your background task must run as a foreground service (e.g., long-running upload, user-visible notification), WorkManager supports this via `setForeground()`.
+
+**Steps:**
+
+1. **Extend Worker/CoroutineWorker:**
+    ```kotlin
+    class UploadWorker(
+        context: Context,
+        params: WorkerParameters
+    ) : CoroutineWorker(context, params) {
+        override suspend fun doWork(): Result {
+            // Set foreground notification
+            setForeground(createForegroundInfo())
+            // Do long-running work
+            uploadFiles()
+            return Result.success()
+        }
+
+        private fun createForegroundInfo(): ForegroundInfo {
+            val notification = NotificationCompat.Builder(applicationContext, "channel_id")
+                .setContentTitle("Uploading files")
+                .setSmallIcon(R.drawable.ic_upload)
+                .build()
+            return ForegroundInfo(1, notification)
+        }
+    }
+    ```
+
+2. **Enqueue the Worker:**
+    ```kotlin
+    val workRequest = OneTimeWorkRequestBuilder<UploadWorker>().build()
+    WorkManager.getInstance(context).enqueue(workRequest)
+    ```
+
+3. **Declare Foreground Service Permission in Manifest:**
+    ```xml
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    ```
+
+---
+
+**Key Points:**
+- Use `setForeground()` in your Worker to show a notification and avoid background restrictions.
+- WorkManager will promote your task to a foreground service as needed.
+- For background-only work, no notification is needed—just use a regular Worker.
+
+---
+
+**Migrating from Services to WorkManager:**
+- Move your logic from `Service`/`IntentService` into a Worker.
+- For user-visible, long-running work, use `setForeground()` in the Worker.
+- For periodic or deferred work, use `PeriodicWorkRequest`.
+- Use WorkManager’s APIs to observe status and handle retries.
+
+---
+
+**References:**
+- [Foreground Services in WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager/advanced/foreground-services)
+- [Migrating from Services to WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager/migrating-fg-service)
+
+
+#### **Limitations**
+
+- **Not for Immediate Work:** Minimum delay for periodic work is 15 minutes; not suitable for real-time or low-latency tasks.
+- **No Exact Timing:** WorkManager does not guarantee exact execution time (OS may batch or delay).
+- **Battery Optimizations:** Subject to Doze mode and background restrictions; may be deferred by the system.
+- **No UI Interaction:** Workers run in the background, not on the main thread, and cannot directly update UI.
+- **Limited to Background Work:** Not suitable for tasks requiring user interaction or foreground UI.
+
+---
+
+#### **When to Use WorkManager**
+
+- Uploading logs, syncing data, or refreshing content in the background.
+- Tasks that must be completed even if the app is killed or device restarts.
+- Chained or dependent background tasks.
+- Periodic background jobs (e.g., daily sync).
+
+---
+
+#### **When to Use AlarmManager or Services Instead**
+
+| Use Case                        | Use WorkManager? | Use AlarmManager? | Use Service?         |
+|----------------------------------|------------------|-------------------|----------------------|
+| Guaranteed, deferred work        | ✅               | ❌                | ❌                   |
+| Exact time (e.g., alarm at 7:00) | ❌               | ✅                | ❌                   |
+| Immediate, short-lived work      | ❌               | ❌                | ✅ (IntentService)    |
+| Foreground, user-visible work    | ❌               | ❌                | ✅ (ForegroundService)|
+| UI interaction                   | ❌               | ❌                | ✅ (Activity/Service) |
+
+**AlarmManager:**  
+- Use when you need to trigger work at an exact time (e.g., calendar alarms, reminders).
+- Not guaranteed to run if device is in Doze mode unless using `setExactAndAllowWhileIdle()` (still not 100% reliable).
+- Does not persist work across device reboots unless you re-register alarms.
+
+**Services:**  
+- Use for immediate, ongoing, or user-initiated work (e.g., music playback, file downloads).
+- ForegroundService is required for long-running or user-visible background work.
+- Not automatically persisted or retried after process death unless managed manually.
+
+---
+
+#### **Best Practices**
+
 **Do:**
-- Use `WorkManager` for tasks that must run even if the app or device restarts.
-- Set constraints on `WorkRequest` as needed.
+- Use WorkManager for background tasks that must be reliable and survive process/device restarts.
+- Set appropriate constraints to avoid unnecessary battery drain.
+- Use chaining for complex workflows.
+- Use input/output Data for passing results between workers.
 
 **Don’t:**
-- Use `WorkManager` for immediate tasks.
-- Forget to cancel or chain long-running work.
+- Use WorkManager for tasks that need to run at an exact time or immediately.
+- Use for foreground or UI work.
+- Forget to handle failure and retries.
+
+---
+
+#### **References**
+
+- [WorkManager Official Docs](https://developer.android.com/topic/libraries/architecture/workmanager)
+- [Background Processing Guide](https://developer.android.com/guide/background)
+- [AlarmManager](https://developer.android.com/reference/android/app/AlarmManager)
+- [Foreground Services](https://developer.android.com/guide/components/foreground-services)
+
 
 ---
 
@@ -1336,20 +1637,131 @@ try {
 
 #### **Call Adapters**
 
-**Coroutines (suspend functions):**
-- Use `suspend` for modern Kotlin code.
+Call adapters in Retrofit determine how the HTTP response is returned from your API interface methods. They allow you to use different return types, such as `suspend` (for coroutines), `LiveData`, `Flow`, RxJava types, or even custom types.
 
-**RxJava:**
+---
+
+**Coroutines (suspend functions):**
+- Use `suspend` for modern Kotlin code. Retrofit will execute the request asynchronously and return the result directly.
+
 ```kotlin
 @GET("users")
-fun getUsers(): Single<List<User>>
+suspend fun getUsers(): List<User>
 ```
 
+**Usage:**
+```kotlin
+viewModelScope.launch {
+    val users = api.getUsers()
+    // Use users
+}
+```
+
+---
+
 **LiveData:**
+- Return a `LiveData` object that emits the response. Useful for integration with Android's architecture components.
+
 ```kotlin
 @GET("users")
 fun getUsers(): LiveData<List<User>>
 ```
+
+**Usage:**
+```kotlin
+api.getUsers().observe(this) { users ->
+    // Update UI
+}
+```
+
+---
+
+**Flow (Kotlin Coroutines):**
+- With the `retrofit2-kotlin-coroutines-adapter` or custom adapters, you can return a `Flow`.
+
+```kotlin
+@GET("users")
+fun getUsers(): Flow<List<User>>
+```
+
+**Usage:**
+```kotlin
+viewModelScope.launch {
+    api.getUsers().collect { users ->
+        // Use users
+    }
+}
+```
+
+---
+
+#### **Custom Call Adapter**
+
+You can create your own call adapter to support custom return types or integrate with other frameworks.
+
+**Example: Custom Result Wrapper**
+
+Suppose you want all API calls to return a sealed `Result<T>` type:
+
+```kotlin
+sealed class Result<out T> {
+    data class Success<T>(val data: T): Result<T>()
+    data class Error(val exception: Throwable): Result<Nothing>()
+}
+```
+
+**Custom Call Adapter Factory:**
+```kotlin
+class ResultCallAdapterFactory : CallAdapter.Factory() {
+    override fun get(
+        returnType: Type,
+        annotations: Array<Annotation>,
+        retrofit: Retrofit
+    ): CallAdapter<*, *>? {
+        // Check if returnType is Result<T>, then return your adapter
+        // (Implementation omitted for brevity)
+    }
+}
+```
+
+**Register the Adapter:**
+```kotlin
+val retrofit = Retrofit.Builder()
+    .baseUrl("https://api.example.com/")
+    .addConverterFactory(MoshiConverterFactory.create())
+    .addCallAdapterFactory(ResultCallAdapterFactory())
+    .build()
+```
+
+**Usage:**
+```kotlin
+@GET("users")
+suspend fun getUsers(): Result<List<User>>
+
+// In your code:
+when (val result = api.getUsers()) {
+    is Result.Success -> { /* Use result.data */ }
+    is Result.Error -> { /* Handle error */ }
+}
+```
+
+---
+
+**Summary Table:**
+
+| Return Type         | Call Adapter Needed?         | Example Usage                        |
+|---------------------|-----------------------------|--------------------------------------|
+| `suspend`           | Built-in (since 2.6.0)      | `suspend fun getUsers(): List<User>` |
+| `LiveData<T>`       | Yes (`LiveDataCallAdapter`) | `fun getUsers(): LiveData<List<User>>` |
+| `Flow<T>`           | Yes (`FlowCallAdapter`)     | `fun getUsers(): Flow<List<User>>`   |
+| `Single<T>`/RxJava  | Yes (RxJava adapter)        | `fun getUsers(): Single<List<User>>` |
+| Custom (`Result<T>`) | Yes (custom adapter)        | `suspend fun getUsers(): Result<List<User>>` |
+
+---
+
+**References:**
+- [Retrofit Call Adapters](https://square.github.io/retrofit/2.x/retrofit/retrofit2/CallAdapter.Factory.html)
+- [Custom Call Adapter Example](https://github.com/square/retrofit/tree/master/samples)
 
 ---
 
