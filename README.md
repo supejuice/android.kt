@@ -147,22 +147,86 @@ var username: String by NonEmptyString()
 ---
 
 ### **Coroutines Advanced**
-Use structured concurrency, channels, flows, and exception handling.
+
+Use structured concurrency, channels, flows, and robust exception handling to manage asynchronous work in Android.
+
+#### **Structured Concurrency**
+- Always launch coroutines in a well-defined scope (`viewModelScope`, `lifecycleScope`, or a custom scope).
+- Child coroutines are canceled automatically when their parent scope is canceled, preventing leaks.
+
+```kotlin
+class MyViewModel : ViewModel() {
+    fun loadData() {
+        viewModelScope.launch {
+            val result = fetchData()
+            // update UI state
+        }
+    }
+}
+```
+
+#### **Channels**
+- Use channels for communication between coroutines (producer-consumer, pipelines).
+- Prefer `Flow` for most data streams; use channels for hot, push-based, or multi-consumer scenarios.
+
+```kotlin
+val channel = Channel<Int>()
+viewModelScope.launch { channel.send(42) }
+viewModelScope.launch { println(channel.receive()) }
+```
+
+#### **Flows**
+- Use `Flow` for cold, asynchronous streams (e.g., database, network, UI events).
+- Combine, transform, and collect flows with operators (`map`, `filter`, `combine`, etc.).
+
+```kotlin
+val numbers = flow {
+    for (i in 1..3) emit(i)
+}
+numbers
+    .map { it * 2 }
+    .flowOn(Dispatchers.Default)
+    .collect { println(it) }
+```
+
+#### **Exception Handling**
+- Use `try/catch` inside coroutines for local errors.
+- Use `CoroutineExceptionHandler` for top-level uncaught exceptions.
+- Prefer `supervisorScope` when you want sibling coroutines to continue after one fails.
+
+```kotlin
+val handler = CoroutineExceptionHandler { _, ex -> Log.e("Coro", "Error: $ex") }
+viewModelScope.launch(handler) {
+    // ...
+}
+```
+
+#### **Best Practices**
+**Do:**
+- Use `supervisorScope` for independent child coroutines.
+- Handle exceptions with `CoroutineExceptionHandler`.
+- Use `withContext(Dispatchers.IO)` for blocking I/O.
+- Cancel coroutines in `onCleared` (ViewModel) or `onDestroy` (Activity/Fragment).
+- Prefer `viewModelScope`/`lifecycleScope` over `GlobalScope`.
+
+**Don’t:**
+- Launch coroutines in `GlobalScope` for app logic (leads to leaks).
+- Block threads inside coroutines (use `withContext` for blocking code).
+- Ignore cancellation signals (check `isActive` or use cooperative functions).
+- Forget to handle exceptions (uncaught exceptions cancel the scope).
+
+#### **Real-life Examples**
+- **Network + Database:** Fetch from network, save to DB, emit updates via `Flow`.
+- **UI Events:** Debounce user input with `Flow` operators.
+- **Periodic Work:** Use `repeatOnLifecycle` or `while(isActive)` in a coroutine for polling.
+- **Timeouts:** Use `withTimeout` or `withTimeoutOrNull` for network/database calls.
 
 ```kotlin
 suspend fun fetchData(): String = withContext(Dispatchers.IO) { /* ... */ }
 
 val channel = Channel<Int>()
-GlobalScope.launch { channel.send(42) }
+viewModelScope.launch { channel.send(42) }
 ```
-
-**Do:**
-- Use `supervisorScope` for independent child coroutines.
-- Handle exceptions with `CoroutineExceptionHandler`.
-
-**Don’t:**
-- Launch coroutines in `GlobalScope` for app logic.
-- Block threads inside coroutines.
 
 ---
 
@@ -1099,29 +1163,275 @@ handler.postDelayed({ textView.text = "Hello" }, 1000L)
 ## Networking (Retrofit & OkHttp)
 
 ### **Retrofit**
-A type-safe HTTP client.
+A type-safe HTTP client for Android and Java, used to interact with REST APIs.
 
+#### **Key Concepts**
+- **Interface-based API:** Define endpoints as Kotlin interfaces.
+- **Annotations:** Use `@GET`, `@POST`, `@PUT`, `@DELETE`, `@PATCH`, `@Query`, `@Body`, `@Header`, etc.
+- **Converters:** Serialize/deserialize JSON or XML (Moshi, Gson, kotlinx.serialization, etc.).
+- **Call Adapters:** Integrate with coroutines, RxJava, LiveData, etc.
+- **Base URL:** All requests are relative to this.
+- **OkHttp Integration:** Handles HTTP requests, logging, interceptors, and more.
+
+---
+
+#### **Basic Usage**
+
+**1. Define a Data Model**
+```kotlin
+data class User(
+    val id: Int,
+    val name: String,
+    val email: String
+)
+```
+
+**2. Define the API Interface**
 ```kotlin
 interface ApiService {
     @GET("users/{id}")
     suspend fun getUser(@Path("id") id: Int): Response<User>
+
+    @GET("users")
+    suspend fun getUsers(@Query("page") page: Int): List<User>
+
+    @POST("users")
+    suspend fun createUser(@Body user: User): Response<User>
+
+    @PUT("users/{id}")
+    suspend fun updateUser(@Path("id") id: Int, @Body user: User): Response<User>
+
+    @DELETE("users/{id}")
+    suspend fun deleteUser(@Path("id") id: Int): Response<Unit>
+}
+```
+
+**3. Build Retrofit Instance**
+```kotlin
+val retrofit = Retrofit.Builder()
+    .baseUrl("https://api.example.com/")
+    .addConverterFactory(MoshiConverterFactory.create()) // or GsonConverterFactory
+    .build()
+
+val api = retrofit.create(ApiService::class.java)
+```
+
+**4. Make API Calls (with Coroutines)**
+```kotlin
+viewModelScope.launch {
+    val response = api.getUser(1)
+    if (response.isSuccessful) {
+        val user = response.body()
+        // Use user
+    } else {
+        // Handle error
+    }
+}
+```
+
+---
+
+#### **Advanced Usage**
+
+**Query Parameters**
+```kotlin
+@GET("search")
+suspend fun searchUsers(
+    @Query("name") name: String,
+    @Query("age") age: Int?
+): List<User>
+```
+
+**Dynamic URLs**
+```kotlin
+@GET
+suspend fun getFromUrl(@Url url: String): Response<ResponseBody>
+```
+
+**Headers**
+```kotlin
+@GET("users")
+suspend fun getUsers(@Header("Authorization") token: String): List<User>
+
+@Headers("Cache-Control: no-cache")
+@GET("users")
+suspend fun getNoCacheUsers(): List<User>
+```
+
+**Form-Encoded and Multipart**
+```kotlin
+@FormUrlEncoded
+@POST("login")
+suspend fun login(
+    @Field("username") username: String,
+    @Field("password") password: String
+): Response<Token>
+
+@Multipart
+@POST("upload")
+suspend fun uploadFile(
+    @Part file: MultipartBody.Part,
+    @Part("description") description: RequestBody
+): Response<Unit>
+```
+
+**Custom OkHttpClient (Timeouts, Logging, Interceptors)**
+```kotlin
+val logging = HttpLoggingInterceptor().apply {
+    level = HttpLoggingInterceptor.Level.BODY
+}
+val client = OkHttpClient.Builder()
+    .addInterceptor(logging)
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .build()
+
+val retrofit = Retrofit.Builder()
+    .baseUrl("https://api.example.com/")
+    .client(client)
+    .addConverterFactory(GsonConverterFactory.create())
+    .build()
+```
+
+---
+
+#### **Error Handling**
+- Always check `response.isSuccessful`.
+- Use `response.errorBody()` for error details.
+- Use try/catch for network exceptions.
+
+```kotlin
+try {
+    val response = api.getUser(1)
+    if (response.isSuccessful) {
+        val user = response.body()
+    } else {
+        val error = response.errorBody()?.string()
+    }
+} catch (e: IOException) {
+    // Network error
+}
+```
+
+---
+
+#### **Call Adapters**
+
+**Coroutines (suspend functions):**
+- Use `suspend` for modern Kotlin code.
+
+**RxJava:**
+```kotlin
+@GET("users")
+fun getUsers(): Single<List<User>>
+```
+
+**LiveData:**
+```kotlin
+@GET("users")
+fun getUsers(): LiveData<List<User>>
+```
+
+---
+
+#### **Converters**
+
+- **Gson:** `addConverterFactory(GsonConverterFactory.create())`
+- **Moshi:** `addConverterFactory(MoshiConverterFactory.create())`
+- **kotlinx.serialization:** `addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))`
+
+---
+
+#### **Testing with MockWebServer**
+```kotlin
+val mockWebServer = MockWebServer()
+mockWebServer.enqueue(MockResponse().setBody("""{"id":1,"name":"Test","email":"test@example.com"}"""))
+mockWebServer.start()
+
+val retrofit = Retrofit.Builder()
+    .baseUrl(mockWebServer.url("/"))
+    .addConverterFactory(MoshiConverterFactory.create())
+    .build()
+```
+
+---
+
+#### **Best Practices**
+
+**Do:**
+- Use `suspend` functions for coroutines.
+- Always call APIs off the main thread.
+- Use dependency injection for Retrofit/ApiService.
+- Secure API keys (do not hardcode).
+- Use interceptors for authentication, logging, and error handling.
+- Handle pagination and errors gracefully.
+
+**Don’t:**
+- Expose secrets or tokens in code.
+- Ignore HTTP error codes.
+- Block the main thread with network calls.
+
+---
+
+#### **Summary Table**
+
+| Feature         | Annotation/Usage         | Example                                 |
+|-----------------|-------------------------|-----------------------------------------|
+| GET             | `@GET`                  | `@GET("users")`                         |
+| POST            | `@POST`                 | `@POST("users")`                        |
+| Path Param      | `@Path`                 | `@GET("users/{id}")`                    |
+| Query Param     | `@Query`                | `@GET("users?age=20")`                  |
+| Body            | `@Body`                 | `@POST("users")`                        |
+| Header          | `@Header`/`@Headers`    | `@Header("Auth")`                       |
+| Form            | `@FormUrlEncoded`/`@Field` | `@POST("login")`                    |
+| Multipart       | `@Multipart`/`@Part`    | `@POST("upload")`                       |
+| Dynamic URL     | `@Url`                  | `@GET`                                  |
+
+---
+
+#### **Complete Example**
+
+```kotlin
+// Data model
+data class User(val id: Int, val name: String, val email: String)
+
+// API interface
+interface ApiService {
+    @GET("users/{id}")
+    suspend fun getUser(@Path("id") id: Int): Response<User>
+
+    @GET("users")
+    suspend fun getUsers(@Query("page") page: Int): List<User>
+
+    @POST("users")
+    suspend fun createUser(@Body user: User): Response<User>
 }
 
+// Retrofit setup
 val retrofit = Retrofit.Builder()
     .baseUrl("https://api.example.com/")
     .addConverterFactory(MoshiConverterFactory.create())
     .build()
 
 val api = retrofit.create(ApiService::class.java)
+
+// Usage in ViewModel or Repository
+suspend fun fetchUser(id: Int): User? {
+    return try {
+        val response = api.getUser(id)
+        if (response.isSuccessful) response.body() else null
+    } catch (e: Exception) {
+        null
+    }
+}
 ```
 
-**Do:**
-- Use `suspend` functions.
-- Always call network APIs off the main thread.
+---
 
-**Don’t:**
-- Forget to check `Response.isSuccessful`.
-- Keep API keys or secrets in code.
+**References:**  
+- [Retrofit Official Docs](https://square.github.io/retrofit/)
+- [Android Networking Best Practices](https://developer.android.com/training/basics/network-ops/connecting)
+- [OkHttp](https://square.github.io/okhttp/)
+
 
 ---
 
